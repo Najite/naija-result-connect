@@ -92,13 +92,7 @@ const AdminLogin = () => {
             </Button>
           </form>
 
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <h4 className="font-semibold text-blue-900 mb-2">Demo Credentials:</h4>
-            <p className="text-sm text-blue-800">
-              <strong>Email:</strong> admin@edunotify.com<br />
-              <strong>Password:</strong> admin123
-            </p>
-          </div>
+        
         </CardContent>
       </Card>
     </div>

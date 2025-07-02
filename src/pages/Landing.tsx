@@ -6,9 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle, Users, Bell, BarChart3, Shield, Smartphone } from "lucide-react";
+import { useNavigate } from 'react-router-dom';
+
+// Inside your component
 
 const Landing = () => {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const navigate = useNavigate();
+
 
   const features = [
     {
@@ -53,18 +58,18 @@ const Landing = () => {
               <span className="text-xl font-bold text-gray-900">EduNotify</span>
             </div>
             <div className="flex items-center space-x-4">
-              <Button 
-                variant="ghost" 
-                onClick={() => setIsLoginOpen(true)}
-                className="text-gray-700 hover:text-green-600"
-              >
-                Login
-              </Button>
-              <Link to="/register">
+            <Button 
+              variant="ghost" 
+              onClick={() => navigate('/admin/login')}
+              className="text-gray-700 hover:text-green-600"
+            >
+              Login
+            </Button>
+              {/* <Link to="/register">
                 <Button className="bg-green-600 hover:bg-green-700 text-white">
                   Register
                 </Button>
-              </Link>
+              </Link> */}
             </div>
           </div>
         </div>
@@ -91,14 +96,14 @@ const Landing = () => {
                     Get Started Free
                   </Button>
                 </Link>
-                <Button 
+                {/* <Button 
                   size="lg" 
                   variant="outline" 
                   onClick={() => setIsLoginOpen(true)}
                   className="border-blue-200 text-blue-600 hover:bg-blue-50 px-8 py-3"
                 >
                   Check Results
-                </Button>
+                </Button> */}
               </div>
               <div className="flex items-center space-x-6 pt-4">
                 {stats.map((stat, index) => (
