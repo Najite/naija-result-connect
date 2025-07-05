@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const twilio = require('twilio');
+const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
@@ -9,10 +9,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(express.json());
-app.use(cors({
-  origin: 'http://localhost:8080',
-  credentials: true
-}));
+app.use(cors({ origin: 'http://localhost:8080', credentials: true }));
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -20,314 +17,295 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
-// Initialize Twilio client
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+// SMS Configuration
+const SENDCHAMP_BASE_URL = 'https://api.sendchamp.com/api/v1';
+const SENDER_NAME = 'Schamp';
 
-// Helper function to format phone number for Nigeria
-function formatPhoneNumber(phone) {
+// Phone number formatter for Nigeria
+const formatPhone = (phone) => {
   if (!phone) return null;
+  const cleaned = phone.replace(/\D/g, '');
   
-  // Remove all non-digit characters
-  let cleaned = phone.replace(/\D/g, '');
-  
-  // Handle Nigerian phone numbers
-  if (cleaned.startsWith('0')) {
-    // Replace leading 0 with +234
-    cleaned = '+234' + cleaned.substring(1);
-  } else if (cleaned.startsWith('234')) {
-    // Add + if missing
-    cleaned = '+' + cleaned;
-  } else if (!cleaned.startsWith('+234')) {
-    // Assume it's a Nigerian number without country code
-    cleaned = '+234' + cleaned;
-  }
-  
+  if (cleaned.startsWith('0')) return '234' + cleaned.substring(1);
+  if (cleaned.startsWith('+234')) return cleaned.substring(1);
+  if (!cleaned.startsWith('234')) return '234' + cleaned;
   return cleaned;
-}
+};
 
-// API endpoint to send result notifications
+// SMS sender function
+const sendSMS = async (phoneNumber, message) => {
+  try {
+    const response = await axios.post(
+      `${SENDCHAMP_BASE_URL}/sms/send`,
+      {
+        to: [phoneNumber],
+        message: message,
+        sender_name: SENDER_NAME,
+        route: 'dnd'
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.SENDCHAMP_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('SMS Error:', error.response?.data || error.message);
+    return { success: false, error: error.response?.data?.message || error.message };
+  }
+};
+
+// Calculate student result summary
+const calculateSummary = (results) => {
+  const totalUnits = results.reduce((sum, r) => sum + (r.courses?.credit_units || 0), 0);
+  const totalGradePoints = results.reduce((sum, r) => {
+    const gp = r.grade_point || 0;
+    const units = r.courses?.credit_units || 0;
+    return sum + (gp * units);
+  }, 0);
+  
+  return {
+    totalCourses: results.length,
+    totalUnits,
+    gpa: totalUnits > 0 ? (totalGradePoints / totalUnits).toFixed(2) : '0.00'
+  };
+};
+
+// Format results for SMS
+const formatResultsForSMS = (results) => {
+  return results.map(r => {
+    const course = r.courses?.course_code || 'N/A';
+    const total = r.total_score || 0;
+    const grade = r.grade || 'N/A';
+    return `${course}: ${total} (${grade})`;
+  }).join('\n');
+};
+
+// Main notification endpoint - checks DB and sends SMS
 app.post('/api/notify-results', async (req, res) => {
   try {
-    console.log('Processing result notifications...');
-    
-    // Check for pending results
-    const { data: pendingResults, error: resultsError } = await supabase
+    const { semester, academicYear, studentIds } = req.body;
+
+    // Build query conditions
+    let query = supabase
       .from('results')
       .select(`
         *,
-        students!inner(id, first_name, last_name, email, phone, student_id),
-        courses!inner(course_title, course_code)
-      `)
-      .eq('status', 'pending');
+        students!inner(id, first_name, last_name, phone, student_id),
+        courses!inner(course_title, course_code, credit_units)
+      `);
 
-    if (resultsError) {
-      throw new Error(`Failed to fetch pending results: ${resultsError.message}`);
+    // Add filters if provided
+    if (semester) query = query.eq('semester', semester);
+    if (academicYear) query = query.eq('academic_year', academicYear);
+    if (studentIds && studentIds.length > 0) {
+      query = query.in('student_id', studentIds);
     }
 
-    if (!pendingResults || pendingResults.length === 0) {
+    const { data: results, error } = await query;
+
+    if (error) {
+      throw new Error(`Database error: ${error.message}`);
+    }
+
+    if (!results || results.length === 0) {
       return res.json({
         success: true,
-        emailsSent: 0,
-        smsSent: 0,
-        total: 0,
-        errors: [],
-        resultsPublished: 0,
-        studentsNotified: 0
+        message: 'No results found in database',
+        resultsFound: 0,
+        published: 0,
+        smsSent: 0
       });
     }
 
-    console.log(`Found ${pendingResults.length} pending results`);
+    console.log(`Found ${results.length} results in database`);
 
-    // Update results status to 'published'
-    const resultIds = pendingResults.map(result => result.id);
-    const { error: updateError } = await supabase
-      .from('results')
-      .update({ 
-        status: 'published',
-        published_at: new Date().toISOString()
-      })
-      .in('id', resultIds);
-
-    if (updateError) {
-      throw new Error(`Failed to update results status: ${updateError.message}`);
-    }
-
-    // Get unique students
-    const uniqueStudents = pendingResults.reduce((acc, result) => {
+    // Group results by student
+    const studentGroups = results.reduce((acc, result) => {
       const studentId = result.students.id;
-      if (!acc.find(s => s.id === studentId)) {
-        acc.push(result.students);
+      if (!acc[studentId]) {
+        acc[studentId] = { student: result.students, results: [] };
       }
+      acc[studentId].results.push(result);
       return acc;
-    }, []);
+    }, {});
 
+    let published = 0;
     let smsSent = 0;
-    const smsErrors = [];
-    const smsResults = [];
+    const errors = [];
 
-    // Send SMS notifications
-    for (const student of uniqueStudents) {
+    // Process each student
+    for (const [studentId, { student, results: studentResults }] of Object.entries(studentGroups)) {
       try {
-        const phoneNumber = formatPhoneNumber(student.phone);
+        // Check if results need to be published
+        const unpublishedResults = studentResults.filter(r => r.status !== 'published');
         
+        if (unpublishedResults.length > 0) {
+          // Publish results
+          const { error: publishError } = await supabase
+            .from('results')
+            .update({ 
+              status: 'published',
+              published_at: new Date().toISOString()
+            })
+            .in('id', unpublishedResults.map(r => r.id));
+
+          if (publishError) {
+            console.error(`Failed to publish results for ${student.first_name}:`, publishError);
+            errors.push(`Failed to publish results for ${student.first_name}`);
+            continue;
+          }
+
+          published += unpublishedResults.length;
+          console.log(`Published ${unpublishedResults.length} results for ${student.first_name}`);
+        }
+
+        // Send SMS notification
+        const phoneNumber = formatPhone(student.phone);
         if (!phoneNumber) {
-          smsErrors.push(`No valid phone number for ${student.first_name} ${student.last_name}`);
+          errors.push(`Invalid phone number for ${student.first_name}`);
           continue;
         }
 
-        const message = `Hello ${student.first_name}, your latest exam results have been published! Log in to EduNotify to view your results. - Moshood Abiola Polytechnic`;
-
-        const smsResult = await twilioClient.messages.create({
-          body: message,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: phoneNumber
-        });
-
-        smsSent++;
-        smsResults.push({
-          student: `${student.first_name} ${student.last_name}`,
-          phone: phoneNumber,
-          sid: smsResult.sid,
-          status: smsResult.status
-        });
-
-        console.log(`SMS sent to ${student.first_name} ${student.last_name} (${phoneNumber})`);
+        const summary = calculateSummary(studentResults);
+        const resultDetails = formatResultsForSMS(studentResults);
         
-      } catch (smsError) {
-        console.error(`SMS failed for ${student.first_name} ${student.last_name}:`, smsError.message);
-        smsErrors.push(`SMS failed for ${student.first_name} ${student.last_name}: ${smsError.message}`);
-      }
-    }
+        // Create SMS message
+        const smsMessage = `Hello ${student.first_name},
 
-    // Store notifications in database
-    const notifications = uniqueStudents.map(student => ({
-      student_id: student.id,
-      title: 'Results Published',
-      message: 'Your latest exam results have been published! Log in to view your results.',
-      type: 'result_published',
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-      sms_sent: uniqueStudents.find(s => s.id === student.id) ? true : false
-    }));
+Your ${studentResults[0].academic_year} ${studentResults[0].semester} results:
 
-    const { error: notificationError } = await supabase
-      .from('notifications')
-      .insert(notifications);
+${resultDetails}
 
-    if (notificationError) {
-      console.error('Failed to store notifications:', notificationError);
-      smsErrors.push('Failed to store notification records');
-    }
+Summary: ${summary.totalCourses} courses, ${summary.totalUnits} units, GPA: ${summary.gpa}
 
-    const response = {
-      success: true,
-      resultsPublished: resultIds.length,
-      studentsNotified: uniqueStudents.length,
-      emailsSent: 0, // Email will be handled by frontend
-      smsSent,
-      total: uniqueStudents.length,
-      errors: smsErrors,
-      smsResults: smsResults
-    };
+Moshood Abiola Polytechnic`;
 
-    console.log('Notification results:', response);
-    res.json(response);
+        const smsResult = await sendSMS(phoneNumber, smsMessage);
 
-  } catch (error) {
-    console.error('Notification service error:', error);
-    res.status(500).json({
-      success: false,
-      resultsPublished: 0,
-      studentsNotified: 0,
-      emailsSent: 0,
-      smsSent: 0,
-      total: 0,
-      errors: [error.message || 'Unknown error occurred']
-    });
-  }
-});
-
-// API endpoint to send custom notifications
-app.post('/api/notify-custom', async (req, res) => {
-  try {
-    const { studentIds, title, message } = req.body;
-
-    if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        errors: ['Student IDs are required']
-      });
-    }
-
-    if (!title || !message) {
-      return res.status(400).json({
-        success: false,
-        errors: ['Title and message are required']
-      });
-    }
-
-    console.log('Sending custom notifications to', studentIds.length, 'students');
-    
-    // Get student details
-    const { data: students, error: studentsError } = await supabase
-      .from('students')
-      .select('*')
-      .in('id', studentIds)
-      .eq('status', 'Active');
-
-    if (studentsError) {
-      throw new Error(`Failed to fetch students: ${studentsError.message}`);
-    }
-
-    if (!students || students.length === 0) {
-      return res.json({
-        success: true,
-        resultsPublished: 0,
-        studentsNotified: 0,
-        emailsSent: 0,
-        smsSent: 0,
-        total: 0,
-        errors: ['No active students found']
-      });
-    }
-
-    let smsSent = 0;
-    const smsErrors = [];
-
-    // Send SMS notifications
-    for (const student of students) {
-      try {
-        const phoneNumber = formatPhoneNumber(student.phone);
-        
-        if (!phoneNumber) {
-          smsErrors.push(`No valid phone number for ${student.first_name} ${student.last_name}`);
-          continue;
+        if (smsResult.success) {
+          smsSent++;
+          console.log(`SMS sent to ${student.first_name} ${student.last_name}`);
+          
+          // Store notification record
+          await supabase.from('notifications').insert({
+            student_id: studentId,
+            title: 'Results Published',
+            message: `Your ${studentResults[0].academic_year} ${studentResults[0].semester} results: ${summary.totalCourses} courses, GPA: ${summary.gpa}`,
+            type: 'result_published',
+            status: 'sent',
+            sent_at: new Date().toISOString()
+          });
+        } else {
+          errors.push(`SMS failed for ${student.first_name}: ${smsResult.error}`);
         }
 
-        const smsMessage = `Hello ${student.first_name}, ${message} - Moshood Abiola Polytechnic`;
+        // Rate limiting delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        await twilioClient.messages.create({
-          body: smsMessage,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: phoneNumber
-        });
-
-        smsSent++;
-        console.log(`Custom SMS sent to ${student.first_name} ${student.last_name}`);
-        
-      } catch (smsError) {
-        console.error(`Custom SMS failed for ${student.first_name} ${student.last_name}:`, smsError.message);
-        smsErrors.push(`SMS failed for ${student.first_name} ${student.last_name}: ${smsError.message}`);
+      } catch (error) {
+        console.error(`Error processing ${student.first_name}:`, error);
+        errors.push(`Error processing ${student.first_name}: ${error.message}`);
       }
-    }
-
-    // Store custom notifications in database
-    const notifications = students.map(student => ({
-      student_id: student.id,
-      title: title,
-      message: message,
-      type: 'custom',
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-      sms_sent: true
-    }));
-
-    const { error: notificationError } = await supabase
-      .from('notifications')
-      .insert(notifications);
-
-    if (notificationError) {
-      console.error('Failed to store custom notifications:', notificationError);
-      smsErrors.push('Failed to store notification records');
     }
 
     res.json({
       success: true,
-      resultsPublished: 0,
-      studentsNotified: students.length,
-      emailsSent: 0, // Email handled by frontend
+      message: `Processed ${Object.keys(studentGroups).length} students`,
+      resultsFound: results.length,
+      published,
       smsSent,
-      total: students.length,
-      errors: smsErrors
+      studentsProcessed: Object.keys(studentGroups).length,
+      errors
     });
 
   } catch (error) {
-    console.error('Custom notification service error:', error);
+    console.error('Service error:', error);
     res.status(500).json({
       success: false,
-      resultsPublished: 0,
-      studentsNotified: 0,
-      emailsSent: 0,
-      smsSent: 0,
-      total: 0,
-      errors: [error.message || 'Unknown error occurred']
+      error: error.message,
+      resultsFound: 0,
+      published: 0,
+      smsSent: 0
     });
   }
 });
 
-// Health check endpoint
+// Quick result check endpoint
+app.get('/api/check-results', async (req, res) => {
+  try {
+    const { semester, academicYear, studentId } = req.query;
+
+    let query = supabase
+      .from('results')
+      .select('id, status, semester, academic_year, student_id, students(first_name, last_name)');
+
+    if (semester) query = query.eq('semester', semester);
+    if (academicYear) query = query.eq('academic_year', academicYear);
+    if (studentId) query = query.eq('student_id', studentId);
+
+    const { data: results, error } = await query;
+
+    if (error) throw new Error(error.message);
+
+    const summary = {
+      total: results?.length || 0,
+      published: results?.filter(r => r.status === 'published').length || 0,
+      unpublished: results?.filter(r => r.status !== 'published').length || 0
+    };
+
+    res.json({ success: true, summary, results: results || [] });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test SMS endpoint
+app.post('/api/test-sms', async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+
+    if (!phone || !message) {
+      return res.status(400).json({ success: false, error: 'Phone and message required' });
+    }
+
+    const phoneNumber = formatPhone(phone);
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, error: 'Invalid phone number' });
+    }
+
+    const testMessage = `Test: ${message} - Moshood Abiola Polytechnic`;
+    const result = await sendSMS(phoneNumber, testMessage);
+
+    res.json(result);
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    service: 'EduNotify SMS Service'
+    service: 'EduNotify Optimized SMS Service',
+    features: ['Database check', 'Auto-publish', 'SMS notifications']
   });
 });
 
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({
-    success: false,
-    errors: ['Internal server error']
-  });
+  res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`EduNotify SMS Service running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`Main endpoint: POST /api/check-and-notify`);
 });

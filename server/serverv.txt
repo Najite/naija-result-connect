@@ -1,0 +1,564 @@
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(express.json());
+app.use(cors({
+  origin: 'http://localhost:8080',
+  credentials: true
+}));
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
+
+// SendChamp configuration
+const SENDCHAMP_BASE_URL = 'https://api.sendchamp.com/api/v1';
+const SENDER_NAME = 'Schamp'; // Updated to match your original sender name
+
+// Helper function to format phone number for Nigeria
+function formatPhoneNumber(phone) {
+  if (!phone) return null;
+  
+  // Remove all non-digit characters
+  let cleaned = phone.replace(/\D/g, '');
+  
+  // Handle Nigerian phone numbers
+  if (cleaned.startsWith('0')) {
+    // Replace leading 0 with 234
+    cleaned = '234' + cleaned.substring(1);
+  } else if (cleaned.startsWith('+234')) {
+    // Remove + if present
+    cleaned = cleaned.substring(1);
+  } else if (!cleaned.startsWith('234')) {
+    // Assume it's a Nigerian number without country code
+    cleaned = '234' + cleaned;
+  }
+  
+  return cleaned;
+}
+
+// Function to send SMS using SendChamp
+async function sendSMS(phoneNumber, message) {
+  try {
+    console.log(`Attempting to send SMS to ${phoneNumber}`);
+    
+    const response = await axios.post(
+      `${SENDCHAMP_BASE_URL}/sms/send`,
+      {
+        to: [phoneNumber], // SendChamp expects an array
+        message: message,
+        sender_name: SENDER_NAME,
+        route: 'dnd' // Using DND route for better delivery
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.SENDCHAMP_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    console.log(`SMS API Response:`, response.data);
+
+    return {
+      success: true,
+      data: response.data,
+      messageId: response.data.data?.id || response.data.id
+    };
+  } catch (error) {
+    console.error('SendChamp SMS error:', {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
+    
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message,
+      details: error.response?.data
+    };
+  }
+}
+
+// Function to send bulk SMS (more efficient for multiple recipients)
+async function sendBulkSMS(phoneNumbers, message) {
+  try {
+    console.log(`Attempting to send bulk SMS to ${phoneNumbers.length} recipients`);
+    
+    const response = await axios.post(
+      `${SENDCHAMP_BASE_URL}/sms/send`,
+      {
+        to: phoneNumbers, // Array of phone numbers
+        message: message,
+        sender_name: SENDER_NAME,
+        route: 'dnd'
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.SENDCHAMP_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    console.log(`Bulk SMS API Response:`, response.data);
+
+    return {
+      success: true,
+      data: response.data,
+      messageId: response.data.data?.id || response.data.id
+    };
+  } catch (error) {
+    console.error('SendChamp Bulk SMS error:', {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
+    
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message,
+      details: error.response?.data
+    };
+  }
+}
+
+// API endpoint to send result notifications
+app.post('/api/notify-results', async (req, res) => {
+  try {
+    console.log('Processing result notifications...');
+    
+    // Check for pending results
+    const { data: pendingResults, error: resultsError } = await supabase
+      .from('results')
+      .select(`
+        *,
+        students!inner(id, first_name, last_name, email, phone, student_id),
+        courses!inner(course_title, course_code)
+      `)
+      .eq('status', 'pending');
+
+    if (resultsError) {
+      throw new Error(`Failed to fetch pending results: ${resultsError.message}`);
+    }
+
+    if (!pendingResults || pendingResults.length === 0) {
+      return res.json({
+        success: true,
+        emailsSent: 0,
+        smsSent: 0,
+        total: 0,
+        errors: [],
+        resultsPublished: 0,
+        studentsNotified: 0
+      });
+    }
+
+    console.log(`Found ${pendingResults.length} pending results`);
+
+    // Update results status to 'published'
+    const resultIds = pendingResults.map(result => result.id);
+    const { error: updateError } = await supabase
+      .from('results')
+      .update({ 
+        status: 'published',
+        published_at: new Date().toISOString()
+      })
+      .in('id', resultIds);
+
+    if (updateError) {
+      throw new Error(`Failed to update results status: ${updateError.message}`);
+    }
+
+    // Get unique students
+    const uniqueStudents = pendingResults.reduce((acc, result) => {
+      const studentId = result.students.id;
+      if (!acc.find(s => s.id === studentId)) {
+        acc.push(result.students);
+      }
+      return acc;
+    }, []);
+
+    let smsSent = 0;
+    const smsErrors = [];
+    const smsResults = [];
+
+    // Option 1: Send individual SMS (more reliable for tracking)
+    for (const student of uniqueStudents) {
+      try {
+        const phoneNumber = formatPhoneNumber(student.phone);
+        
+        if (!phoneNumber) {
+          smsErrors.push(`No valid phone number for ${student.first_name} ${student.last_name}`);
+          continue;
+        }
+
+        const message = `Hello ${student.first_name}, your latest exam results have been published! Log in to EduNotify to view your results. - Moshood Abiola Polytechnic`;
+
+        const smsResult = await sendSMS(phoneNumber, message);
+
+        if (smsResult.success) {
+          smsSent++;
+          smsResults.push({
+            student: `${student.first_name} ${student.last_name}`,
+            phone: phoneNumber,
+            messageId: smsResult.messageId,
+            status: 'sent'
+          });
+
+          console.log(`SMS sent to ${student.first_name} ${student.last_name} (${phoneNumber})`);
+        } else {
+          console.error(`SMS failed for ${student.first_name} ${student.last_name}:`, smsResult.error);
+          smsErrors.push(`SMS failed for ${student.first_name} ${student.last_name}: ${smsResult.error}`);
+        }
+        
+        // Add delay between SMS to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (smsError) {
+        console.error(`SMS failed for ${student.first_name} ${student.last_name}:`, smsError.message);
+        smsErrors.push(`SMS failed for ${student.first_name} ${student.last_name}: ${smsError.message}`);
+      }
+    }
+
+    // Store notifications in database
+    const notifications = uniqueStudents.map(student => ({
+      student_id: student.id,
+      title: 'Results Published',
+      message: 'Your latest exam results have been published! Log in to view your results.',
+      type: 'result_published',
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      sms_sent: smsResults.some(r => r.phone === formatPhoneNumber(student.phone))
+    }));
+
+    const { error: notificationError } = await supabase
+      .from('notifications')
+      .insert(notifications);
+
+    if (notificationError) {
+      console.error('Failed to store notifications:', notificationError);
+      smsErrors.push('Failed to store notification records');
+    }
+
+    const response = {
+      success: true,
+      resultsPublished: resultIds.length,
+      studentsNotified: uniqueStudents.length,
+      emailsSent: 0, // Email will be handled by frontend
+      smsSent,
+      total: uniqueStudents.length,
+      errors: smsErrors,
+      smsResults: smsResults
+    };
+
+    console.log('Notification results:', response);
+    res.json(response);
+
+  } catch (error) {
+    console.error('Notification service error:', error);
+    res.status(500).json({
+      success: false,
+      resultsPublished: 0,
+      studentsNotified: 0,
+      emailsSent: 0,
+      smsSent: 0,
+      total: 0,
+      errors: [error.message || 'Unknown error occurred']
+    });
+  }
+});
+
+// API endpoint to send custom notifications
+app.post('/api/notify-custom', async (req, res) => {
+  try {
+    const { studentIds, title, message } = req.body;
+
+    if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        errors: ['Student IDs are required']
+      });
+    }
+
+    if (!title || !message) {
+      return res.status(400).json({
+        success: false,
+        errors: ['Title and message are required']
+      });
+    }
+
+    console.log('Sending custom notifications to', studentIds.length, 'students');
+    
+    // Get student details
+    const { data: students, error: studentsError } = await supabase
+      .from('students')
+      .select('*')
+      .in('id', studentIds)
+      .eq('status', 'Active');
+
+    if (studentsError) {
+      throw new Error(`Failed to fetch students: ${studentsError.message}`);
+    }
+
+    if (!students || students.length === 0) {
+      return res.json({
+        success: true,
+        resultsPublished: 0,
+        studentsNotified: 0,
+        emailsSent: 0,
+        smsSent: 0,
+        total: 0,
+        errors: ['No active students found']
+      });
+    }
+
+    let smsSent = 0;
+    const smsErrors = [];
+
+    // Option 1: Individual SMS sending
+    for (const student of students) {
+      try {
+        const phoneNumber = formatPhoneNumber(student.phone);
+        
+        if (!phoneNumber) {
+          smsErrors.push(`No valid phone number for ${student.first_name} ${student.last_name}`);
+          continue;
+        }
+
+        const smsMessage = `Hello ${student.first_name}, ${message} - Moshood Abiola Polytechnic`;
+
+        const smsResult = await sendSMS(phoneNumber, smsMessage);
+
+        if (smsResult.success) {
+          smsSent++;
+          console.log(`Custom SMS sent to ${student.first_name} ${student.last_name}`);
+        } else {
+          console.error(`SMS failed for ${student.first_name} ${student.last_name}:`, smsResult.error);
+          smsErrors.push(`SMS failed for ${student.first_name} ${student.last_name}: ${smsResult.error}`);
+        }
+
+        // Add delay between SMS to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (smsError) {
+        console.error(`Custom SMS failed for ${student.first_name} ${student.last_name}:`, smsError.message);
+        smsErrors.push(`SMS failed for ${student.first_name} ${student.last_name}: ${smsError.message}`);
+      }
+    }
+
+    // Store custom notifications in database
+    const notifications = students.map(student => ({
+      student_id: student.id,
+      title: title,
+      message: message,
+      type: 'custom',
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      sms_sent: true
+    }));
+
+    const { error: notificationError } = await supabase
+      .from('notifications')
+      .insert(notifications);
+
+    if (notificationError) {
+      console.error('Failed to store custom notifications:', notificationError);
+      smsErrors.push('Failed to store notification records');
+    }
+
+    res.json({
+      success: true,
+      resultsPublished: 0,
+      studentsNotified: students.length,
+      emailsSent: 0, // Email handled by frontend
+      smsSent,
+      total: students.length,
+      errors: smsErrors
+    });
+
+  } catch (error) {
+    console.error('Custom notification service error:', error);
+    res.status(500).json({
+      success: false,
+      resultsPublished: 0,
+      studentsNotified: 0,
+      emailsSent: 0,
+      smsSent: 0,
+      total: 0,
+      errors: [error.message || 'Unknown error occurred']
+    });
+  }
+});
+
+// New endpoint for bulk SMS (optional - for better performance)
+app.post('/api/notify-bulk', async (req, res) => {
+  try {
+    const { studentIds, message } = req.body;
+
+    if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        errors: ['Student IDs are required']
+      });
+    }
+
+    if (!message) {
+      return res.status(400).json({
+        success: false,
+        errors: ['Message is required']
+      });
+    }
+
+    // Get student details
+    const { data: students, error: studentsError } = await supabase
+      .from('students')
+      .select('*')
+      .in('id', studentIds)
+      .eq('status', 'Active');
+
+    if (studentsError) {
+      throw new Error(`Failed to fetch students: ${studentsError.message}`);
+    }
+
+    if (!students || students.length === 0) {
+      return res.json({
+        success: true,
+        smsSent: 0,
+        total: 0,
+        errors: ['No active students found']
+      });
+    }
+
+    // Prepare phone numbers
+    const phoneNumbers = students
+      .map(student => formatPhoneNumber(student.phone))
+      .filter(phone => phone !== null);
+
+    if (phoneNumbers.length === 0) {
+      return res.json({
+        success: true,
+        smsSent: 0,
+        total: 0,
+        errors: ['No valid phone numbers found']
+      });
+    }
+
+    const bulkMessage = `${message} - Moshood Abiola Polytechnic`;
+    const smsResult = await sendBulkSMS(phoneNumbers, bulkMessage);
+
+    if (smsResult.success) {
+      console.log(`Bulk SMS sent to ${phoneNumbers.length} recipients`);
+      
+      res.json({
+        success: true,
+        smsSent: phoneNumbers.length,
+        total: students.length,
+        errors: [],
+        messageId: smsResult.messageId
+      });
+    } else {
+      res.json({
+        success: false,
+        smsSent: 0,
+        total: students.length,
+        errors: [smsResult.error]
+      });
+    }
+
+  } catch (error) {
+    console.error('Bulk SMS service error:', error);
+    res.status(500).json({
+      success: false,
+      smsSent: 0,
+      total: 0,
+      errors: [error.message || 'Unknown error occurred']
+    });
+  }
+});
+
+// Test SMS endpoint
+app.post('/api/test-sms', async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+
+    if (!phone || !message) {
+      return res.status(400).json({
+        success: false,
+        errors: ['Phone and message are required']
+      });
+    }
+
+    const phoneNumber = formatPhoneNumber(phone);
+    
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        errors: ['Invalid phone number format']
+      });
+    }
+
+    const testMessage = `Test SMS: ${message} - Moshood Abiola Polytechnic`;
+    const smsResult = await sendSMS(phoneNumber, testMessage);
+
+    if (smsResult.success) {
+      res.json({
+        success: true,
+        message: `SMS sent successfully to ${phoneNumber}`,
+        messageId: smsResult.messageId,
+        data: smsResult.data
+      });
+    } else {
+      res.json({
+        success: false,
+        error: smsResult.error,
+        details: smsResult.details
+      });
+    }
+
+  } catch (error) {
+    console.error('Test SMS error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Unknown error occurred'
+    });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    service: 'EduNotify SMS Service (SendChamp)',
+    sender: SENDER_NAME
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    success: false,
+    errors: ['Internal server error']
+  });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`EduNotify SMS Service running on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`Test SMS: http://localhost:${PORT}/api/test-sms`);
+  console.log(`Using SendChamp SMS service with sender name: ${SENDER_NAME}`);
+});

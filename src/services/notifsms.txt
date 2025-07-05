@@ -1,0 +1,195 @@
+import { supabase } from '@/integrations/supabase/client';
+
+interface NotificationResult {
+  success: boolean;
+  smsSent: number;
+  total: number;
+  resultsPublished: number;
+  studentsNotified: number;
+  successDetails?: any[];
+  failureDetails?: any[];
+  message?: string;
+}
+
+export class NotificationService {
+  private static readonly SMS_SERVICE_URL = process.env.NODE_ENV === 'production' 
+    ? 'https://your-production-sms-service.com' 
+    : 'http://localhost:3001';
+
+  // Main method to publish results and send SMS
+  static async publishAndNotifyResults(): Promise<NotificationResult> {
+    try {
+      console.log('📢 Publishing results and sending SMS notifications...');
+      console.log('🌐 SMS Service URL:', this.SMS_SERVICE_URL);
+      
+      // Check if SMS service is healthy first
+      const isHealthy = await this.checkSMSServiceHealth();
+      if (!isHealthy) {
+        throw new Error('SMS service is not available. Please check if the backend is running on port 3001.');
+      }
+      
+      const response = await fetch(`${this.SMS_SERVICE_URL}/api/notify-results`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        mode: 'cors',
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ SMS service error response:', errorText);
+        throw new Error(`SMS service failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      console.log('✅ Notification results:', result);
+      
+      return {
+        success: result.success,
+        smsSent: result.smsSent || 0,
+        total: result.total || 0,
+        resultsPublished: result.resultsPublished || 0,
+        studentsNotified: result.studentsNotified || 0,
+        successDetails: result.successDetails || [],
+        failureDetails: result.failureDetails || [],
+        message: result.message
+      };
+
+    } catch (error) {
+      console.error('❌ Notification service error:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Unknown error';
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        errorMessage = 'Cannot connect to SMS service. Please ensure the backend server is running on port 3001.';
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      return {
+        success: false,
+        resultsPublished: 0,
+        studentsNotified: 0,
+        smsSent: 0,
+        total: 0,
+        message: errorMessage
+      };
+    }
+  }
+
+  // Send custom notifications to selected students
+  static async sendCustomNotification(
+    studentIds: string[], 
+    title: string, 
+    message: string
+  ): Promise<NotificationResult> {
+    try {
+      console.log(`📱 Sending custom SMS to ${studentIds.length} students`);
+      
+      const response = await fetch(`${this.SMS_SERVICE_URL}/api/notify-custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentIds, title, message })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Custom SMS service failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      return {
+        success: result.success,
+        smsSent: result.smsSent || 0,
+        total: result.total || 0,
+        resultsPublished: 0,
+        studentsNotified: result.studentsNotified || 0,
+        successDetails: result.successDetails || [],
+        failureDetails: result.failureDetails || [],
+        message: result.message
+      };
+
+    } catch (error) {
+      console.error('❌ Custom notification error:', error);
+      return {
+        success: false,
+        resultsPublished: 0,
+        studentsNotified: 0,
+        smsSent: 0,
+        total: 0,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Test SMS functionality
+  static async testSMS(phoneNumber: string, message: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.SMS_SERVICE_URL}/api/test-sms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber, message })
+      });
+
+      const result = await response.json();
+      return result.success;
+    } catch (error) {
+      console.error('❌ Test SMS error:', error);
+      return false;
+    }
+  }
+
+  // Get notification history
+  static async getNotificationHistory(limit: number = 50) {
+    try {
+      const { data: notifications, error } = await supabase
+        .from('notifications')
+        .select(`
+          *,
+          students(first_name, last_name, student_id)
+        `)
+        .order('sent_at', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      return notifications || [];
+    } catch (error) {
+      console.error('❌ Error fetching notifications:', error);
+      return [];
+    }
+  }
+
+  // Check if SMS service is running
+  static async checkSMSServiceHealth(): Promise<boolean> {
+    try {
+      console.log('🔍 Checking SMS service health...');
+      const response = await fetch(`${this.SMS_SERVICE_URL}/api/health`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        mode: 'cors',
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const health = await response.json();
+        console.log('✅ SMS service is healthy:', health);
+        return true;
+      } else {
+        console.warn('⚠️ SMS service health check failed:', response.status);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ SMS service health check failed:', error);
+      return false;
+    }
+  }
+
+  // Alias for backward compatibility
+  static async sendResultNotifications(): Promise<NotificationResult> {
+    return this.publishAndNotifyResults();
+  }
+}

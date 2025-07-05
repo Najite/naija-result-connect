@@ -1,0 +1,489 @@
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(express.json());
+
+// CORS configuration - include all common development ports
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:8080',  // Your frontend port
+  'http://localhost:5173',  // Vite
+  'http://localhost:3001',  // Self-reference
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked origin: ${origin}`);
+      // For development, allow all localhost origins
+      if (origin.includes('localhost')) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// Initialize Supabase
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+
+// SMS Configuration
+const API_KEY = process.env.SENDCHAMP_API_KEY;
+const SMS_URL = 'https://api.sendchamp.com/api/v1/sms/send';
+
+// Format phone number for Nigeria
+function formatPhone(phone) {
+  if (!phone) return null;
+  let cleaned = phone.replace(/\D/g, '');
+  
+  if (cleaned.startsWith('0')) cleaned = '234' + cleaned.substring(1);
+  else if (!cleaned.startsWith('234') && cleaned.length === 10) cleaned = '234' + cleaned;
+  
+  // Validate Nigerian mobile (234 + 10 digits starting with 7,8,9)
+  if (cleaned.length === 13 && ['7', '8', '9'].includes(cleaned.charAt(3))) {
+    return cleaned;
+  }
+  return null;
+}
+
+// Send SMS with retry and enhanced logging
+async function sendSMS(phone, message, studentName = '', retries = 2) {
+  try {
+    console.log(`📤 Attempting to send SMS to ${studentName || 'Student'} at ${phone}`);
+    console.log(`📝 Message: ${message}`);
+    
+    const response = await axios.post(SMS_URL, {
+      to: [phone],
+      message: message,
+      sender_name: 'MAPOLY',
+      route: 'dnd'
+    }, {
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    });
+    
+    console.log(`✅ SMS successfully sent to ${studentName || 'Student'} (${phone})`);
+    console.log(`📊 Response status: ${response.status}`);
+    console.log(`📋 Response data:`, JSON.stringify(response.data, null, 2));
+    
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`❌ SMS failed for ${studentName || 'Student'} (${phone}):`, error.response?.data || error.message);
+    
+    // Retry on rate limit
+    if (error.response?.status === 429 && retries > 0) {
+      console.log(`⏳ Rate limit hit. Retrying in 2s... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return sendSMS(phone, message, studentName, retries - 1);
+    }
+    
+    return { success: false, error: error.response?.data || error.message };
+  }
+}
+
+// Process SMS batch with enhanced logging
+async function processSMSBatch(students, messageTemplate) {
+  const results = { sent: [], failed: [], total: students.length };
+  
+  console.log(`📱 Starting SMS batch processing for ${students.length} students`);
+  console.log(`📝 Message template: ${messageTemplate}`);
+  
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+    const studentName = `${student.first_name} ${student.last_name}`;
+    
+    try {
+      console.log(`\n📤 Processing student ${i + 1}/${students.length}: ${studentName}`);
+      
+      const phone = formatPhone(student.phone);
+      if (!phone) {
+        console.error(`❌ Invalid phone number for ${studentName}: ${student.phone}`);
+        results.failed.push({ 
+          student: studentName, 
+          phone: student.phone,
+          error: 'Invalid phone number format' 
+        });
+        continue;
+      }
+      
+      const message = messageTemplate
+        .replace('{firstName}', student.first_name)
+        .replace('{lastName}', student.last_name)
+        .replace('{score}', student.results?.[0]?.total_score || 'N/A')
+        .replace('{cgpa}', student.calculatedCGPA || student.cgpa || 'N/A')
+        .substring(0, 160); // SMS limit
+      
+      const smsResult = await sendSMS(phone, message, studentName);
+      
+      if (smsResult.success) {
+        console.log(`✅ SUCCESS: ${studentName} (${phone}) - SMS sent successfully`);
+        results.sent.push({ 
+          student: studentName, 
+          phone: phone,
+          message: message,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        console.error(`❌ FAILED: ${studentName} (${phone}) - ${smsResult.error}`);
+        results.failed.push({ 
+          student: studentName, 
+          phone: phone,
+          error: smsResult.error 
+        });
+      }
+      
+      // Small delay between messages to avoid rate limiting
+      if (i < students.length - 1) {
+        console.log(`⏳ Waiting 500ms before next SMS...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+    } catch (error) {
+      console.error(`❌ EXCEPTION for ${studentName}:`, error.message);
+      results.failed.push({ 
+        student: studentName, 
+        phone: student.phone,
+        error: error.message 
+      });
+    }
+  }
+  
+  // Final summary
+  console.log(`\n📊 SMS BATCH SUMMARY:`);
+  console.log(`✅ Successfully sent: ${results.sent.length}`);
+  console.log(`❌ Failed: ${results.failed.length}`);
+  console.log(`📱 Total processed: ${results.total}`);
+  
+  if (results.sent.length > 0) {
+    console.log(`\n📋 SUCCESS LIST:`);
+    results.sent.forEach((item, index) => {
+      console.log(`${index + 1}. ${item.student} - ${item.phone}`);
+    });
+  }
+  
+  if (results.failed.length > 0) {
+    console.log(`\n📋 FAILED LIST:`);
+    results.failed.forEach((item, index) => {
+      console.log(`${index + 1}. ${item.student} - ${item.phone || 'N/A'} - ${item.error}`);
+    });
+  }
+  
+  return results;
+}
+
+// Notify results endpoint
+app.post('/api/notify-results', async (req, res) => {
+  try {
+    console.log('\n🚀 =====================================');
+    console.log('📢 Starting result notification process...');
+    console.log('🚀 =====================================');
+    console.log('Request origin:', req.headers.origin);
+    console.log('Timestamp:', new Date().toISOString());
+    
+    // Check if required services are configured
+    if (!API_KEY) {
+      throw new Error('Sendchamp API key not configured');
+    }
+    
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+      throw new Error('Supabase not configured');
+    }
+    
+    console.log('✅ Configuration check passed');
+    
+    // Get students with pending results
+    console.log('📊 Fetching students with pending results...');
+    const { data: students, error } = await supabase
+      .from('students')
+      .select(`
+        id, student_id, first_name, last_name, phone, cgpa,
+        results!inner(id, total_score, grade, semester, status)
+      `)
+      .eq('results.status', 'pending')
+      .eq('status', 'Active')
+      .not('phone', 'is', null);
+
+    if (error) {
+      console.error('❌ Database error:', error);
+      throw new Error(`Database error: ${error.message}`);
+    }
+    
+    if (!students?.length) {
+      console.log('⚠️  No pending results found');
+      return res.json({
+        success: true,
+        message: 'No pending results found',
+        smsSent: 0,
+        total: 0,
+        resultsPublished: 0,
+        studentsNotified: 0
+      });
+    }
+    
+    console.log(`📱 Found ${students.length} students with pending results:`);
+    students.forEach((student, index) => {
+      console.log(`${index + 1}. ${student.first_name} ${student.last_name} - ${student.phone}`);
+    });
+    
+    // Update results to published
+    console.log('📝 Updating results status to published...');
+    const resultIds = [...new Set(students.flatMap(s => s.results.map(r => r.id)))];
+    const { error: updateError } = await supabase
+      .from('results')
+      .update({ status: 'published', published_at: new Date().toISOString() })
+      .in('id', resultIds);
+    
+    if (updateError) {
+      console.error('❌ Results update error:', updateError);
+      throw new Error(`Failed to update results: ${updateError.message}`);
+    }
+    
+    console.log(`✅ Published ${resultIds.length} results`);
+    
+    // Calculate CGPA for each student
+    console.log('🧮 Calculating CGPA for students...');
+    const studentsWithCGPA = await Promise.all(
+      students.map(async (student) => {
+        try {
+          const { data: cgpa } = await supabase.rpc('calculate_student_cgpa', { student_uuid: student.id });
+          const calculatedCGPA = cgpa || student.cgpa || 0;
+          console.log(`📊 ${student.first_name} ${student.last_name}: CGPA = ${calculatedCGPA}`);
+          return { ...student, calculatedCGPA };
+        } catch (error) {
+          console.warn(`⚠️  CGPA calculation failed for ${student.first_name}:`, error);
+          return { ...student, calculatedCGPA: student.cgpa || 0 };
+        }
+      })
+    );
+    
+    // Send SMS notifications
+    console.log('\n📱 Starting SMS notification process...');
+    const messageTemplate = `Hello {firstName}, your results are ready! Latest Score: {score}, CGPA: {cgpa}. Check your portal for details. - MAPOLY`;
+    const smsResults = await processSMSBatch(studentsWithCGPA, messageTemplate);
+    
+    // Store notifications
+    console.log('💾 Storing notifications in database...');
+    const notifications = students.map(student => ({
+      student_id: student.id,
+      title: 'Results Published',
+      message: 'Your results are ready! Check your portal for details.',
+      type: 'result_published',
+      status: 'sent',
+      sent_at: new Date().toISOString()
+    }));
+    
+    const { error: notificationError } = await supabase.from('notifications').insert(notifications);
+    
+    if (notificationError) {
+      console.warn('⚠️  Failed to store notifications:', notificationError);
+    } else {
+      console.log('✅ Notifications stored successfully');
+    }
+    
+    const response = {
+      success: true,
+      message: 'Results published and notifications sent',
+      resultsPublished: resultIds.length,
+      studentsNotified: students.length,
+      smsSent: smsResults.sent.length,
+      smsFailed: smsResults.failed.length,
+      total: students.length,
+      successDetails: smsResults.sent,
+      failureDetails: smsResults.failed
+    };
+    
+    console.log('\n🎉 =====================================');
+    console.log('📊 FINAL RESULTS SUMMARY:');
+    console.log('🎉 =====================================');
+    console.log(`✅ Results published: ${response.resultsPublished}`);
+    console.log(`👥 Students notified: ${response.studentsNotified}`);
+    console.log(`📱 SMS sent successfully: ${response.smsSent}`);
+    console.log(`❌ SMS failed: ${response.smsFailed}`);
+    console.log(`📊 Total processed: ${response.total}`);
+    console.log('🎉 =====================================\n');
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error('\n💥 =====================================');
+    console.error('❌ NOTIFICATION ERROR:');
+    console.error('💥 =====================================');
+    console.error('Error message:', error.message);
+    console.error('Stack trace:', error.stack);
+    console.error('💥 =====================================\n');
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process notifications',
+      error: error.message,
+      resultsPublished: 0,
+      studentsNotified: 0,
+      smsSent: 0,
+      total: 0
+    });
+  }
+});
+
+// Send custom notifications
+app.post('/api/notify-custom', async (req, res) => {
+  try {
+    console.log('\n🚀 =====================================');
+    console.log('📢 Starting custom notification process...');
+    console.log('🚀 =====================================');
+    
+    const { studentIds, title, message } = req.body;
+    
+    if (!title || !message) {
+      return res.status(400).json({ success: false, message: 'Title and message required' });
+    }
+    
+    console.log('📝 Custom notification details:');
+    console.log('Title:', title);
+    console.log('Message:', message);
+    console.log('Student IDs:', studentIds);
+    
+    const { data: students, error } = await supabase
+      .from('students')
+      .select('*')
+      .in('id', studentIds || [])
+      .eq('status', 'Active');
+    
+    if (error) throw new Error(`Database error: ${error.message}`);
+    
+    if (!students?.length) {
+      console.log('⚠️  No students found for custom notification');
+      return res.json({ success: true, message: 'No students found', smsSent: 0, total: 0 });
+    }
+    
+    console.log(`📱 Found ${students.length} students for custom notification:`);
+    students.forEach((student, index) => {
+      console.log(`${index + 1}. ${student.first_name} ${student.last_name} - ${student.phone}`);
+    });
+    
+    const messageTemplate = `Hello {firstName}, ${message} - MAPOLY`;
+    const smsResults = await processSMSBatch(students, messageTemplate);
+    
+    // Store notifications
+    const notifications = students.map(student => ({
+      student_id: student.id,
+      title,
+      message,
+      type: 'custom',
+      status: 'sent',
+      sent_at: new Date().toISOString()
+    }));
+    
+    await supabase.from('notifications').insert(notifications);
+    
+    const response = {
+      success: true,
+      message: 'Custom notifications sent',
+      smsSent: smsResults.sent.length,
+      smsFailed: smsResults.failed.length,
+      total: students.length,
+      successDetails: smsResults.sent,
+      failureDetails: smsResults.failed
+    };
+    
+    console.log('\n🎉 CUSTOM NOTIFICATION SUMMARY:');
+    console.log(`✅ SMS sent successfully: ${response.smsSent}`);
+    console.log(`❌ SMS failed: ${response.smsFailed}`);
+    console.log(`📊 Total processed: ${response.total}`);
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ Custom notification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send custom notifications',
+      error: error.message
+    });
+  }
+});
+
+// Test SMS endpoint with enhanced logging
+app.post('/api/test-sms', async (req, res) => {
+  try {
+    console.log('\n🧪 =====================================');
+    console.log('📱 Testing SMS functionality...');
+    console.log('🧪 =====================================');
+    
+    const { phoneNumber, message } = req.body;
+    
+    console.log('📞 Phone number:', phoneNumber);
+    console.log('📝 Message:', message);
+    
+    const phone = formatPhone(phoneNumber);
+    if (!phone) {
+      console.error('❌ Invalid phone number format');
+      return res.status(400).json({ success: false, message: 'Invalid phone number' });
+    }
+    
+    console.log('📱 Formatted phone:', phone);
+    
+    const result = await sendSMS(phone, message, 'Test User');
+    
+    if (result.success) {
+      console.log('✅ Test SMS sent successfully');
+      res.json({ success: true, message: 'SMS sent successfully', to: phone });
+    } else {
+      console.error('❌ Test SMS failed');
+      res.status(500).json({ success: false, message: 'SMS failed', error: result.error });
+    }
+    
+  } catch (error) {
+    console.error('❌ Test SMS error:', error);
+    res.status(500).json({ success: false, message: 'Test SMS error', error: error.message });
+  }
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  const healthStatus = {
+    status: 'OK',
+    service: 'SMS Service',
+    timestamp: new Date().toISOString(),
+    configured: !!API_KEY && !!process.env.SUPABASE_URL,
+    sendchamp_api: !!API_KEY ? 'Configured' : 'Missing',
+    supabase: !!process.env.SUPABASE_URL ? 'Configured' : 'Missing'
+  };
+  
+  console.log('🔍 Health check:', healthStatus);
+  res.json(healthStatus);
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('💥 Unhandled error:', err);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log('\n🚀 =====================================');
+  console.log(`🚀 SMS Service running on port ${PORT}`);
+  console.log(`📱 Sendchamp: ${!!API_KEY ? 'Configured ✅' : 'Missing API Key ❌'}`);
+  console.log(`🗄️  Supabase: ${!!process.env.SUPABASE_URL ? 'Configured ✅' : 'Missing URL ❌'}`);
+  console.log('🚀 =====================================\n');
+});
