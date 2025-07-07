@@ -82,7 +82,7 @@ const AddStudentDialog: React.FC<AddStudentDialogProps> = ({ onStudentAdded }) =
     'Agriculture',
   ];
 
-  const levels = ['100', '200', '300', '400', '500'];
+  const levels = ['ND 1', 'ND 2', 'HND 1', 'HND 2',];
   const semesters = ['First Semester', 'Second Semester'] as const;
 
   const handleInputChange = (field: keyof typeof formData, value: string) => {
@@ -256,10 +256,10 @@ const AddStudentDialog: React.FC<AddStudentDialogProps> = ({ onStudentAdded }) =
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="student_id">Student ID *</Label>
+          <Label htmlFor="student_id">Matric No *</Label>
           <Input
             id="student_id"
-            placeholder="e.g., STU2024001"
+            placeholder="19/69/05/004"
             value={formData.student_id}
             onChange={(e) => handleInputChange('student_id', e.target.value)}
             required
@@ -325,7 +325,7 @@ const AddStudentDialog: React.FC<AddStudentDialogProps> = ({ onStudentAdded }) =
         <Label htmlFor="phone">Phone Number *</Label>
         <Input
           id="phone"
-          placeholder="Enter phone number"
+          placeholder="23412345678"
           value={formData.phone}
           onChange={(e) => handleInputChange('phone', e.target.value)}
           required

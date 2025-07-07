@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{subject}}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .email-container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #2c5aa0;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .logo {
+            color: #2c5aa0;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .student-info {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2c5aa0;
+        }
+        .student-info h3 {
+            color: #2c5aa0;
+            margin-top: 0;
+        }
+        .info-item {
+            margin: 8px 0;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #555;
+        }
+        .results-section {
+            margin: 30px 0;
+        }
+        .results-content {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-line;
+            font-size: 14px;
+            line-height: 1.4;
+            border: 1px solid #dee2e6;
+        }
+        .action-buttons {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #2c5aa0;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            margin: 0 10px;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #1e3d6f;
+        }
+        .help-section {
+            background-color: #e7f3ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #0066cc;
+        }
+        .help-section h4 {
+            color: #0066cc;
+            margin-top: 0;
+        }
+        .help-list {
+            margin: 10px 0;
+        }
+        .help-list li {
+            margin: 8px 0;
+            color: #555;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #666;
+            font-size: 12px;
+        }
+        .footer-institution {
+            font-weight: bold;
+            color: #2c5aa0;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .automated-message {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+            font-size: 14px;
+            color: #856404;
+        }
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            .email-container {
+                padding: 20px;
+            }
+            .btn {
+                display: block;
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <div class="logo">🎓 {{institution}}</div>
+            <h2 style="color: #2c5aa0; margin: 0;">Academic Results Notification</h2>
+        </div>
+
+        <div class="student-info">
+            <h3>Student Information</h3>
+            <div class="info-item">
+                <span class="info-label">Name:</span> {{to_name}}
+            </div>
+            <div class="info-item">
+                <span class="info-label">Student ID:</span> {{student_id}}
+            </div>
+            <div class="info-item">
+                <span class="info-label">Email:</span> {{to_email}}
+            </div>
+        </div>
+
+        <div class="results-section">
+            <h3 style="color: #2c5aa0;">📋 Your Academic Results</h3>
+            <div class="results-content">{{message}}</div>
+        </div>
+
+        <div class="action-buttons">
+            <a href="#" class="btn">🔐 Access Student Portal</a>
+        </div>
+
+        <div class="help-section">
+            <h4>📞 Need Help?</h4>
+            <p>If you have any questions or need assistance, please contact:</p>
+            <ul class="help-list">
+                <li><strong>Academic Affairs Office:</strong> +234-XXX-XXX-XXXX</li>
+                <li><strong>Email Support:</strong> support@mapoly.edu.ng</li>
+                <li><strong>Student Help Desk:</strong> Available Monday-Friday, 8:00 AM - 5:00 PM</li>
+            </ul>
+        </div>
+
+        <div class="automated-message">
+            <strong>⚠️ Important Notice:</strong> This is an automated message. Please do not reply directly to this email. 
+            For support, use the contact information provided above.
+        </div>
+
+        <div class="footer">
+            <div class="footer-institution">{{institution}}</div>
+            <div>Academic Affairs Department</div>
+            <div>Academic Portal System</div>
+            <div style="margin-top: 10px;">
+                <em>Sent on {{sent_date}}</em>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -200,7 +200,7 @@ const EnhancedStudentList: React.FC<EnhancedStudentListProps> = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student ID</TableHead>
+                  <TableHead>Matric No</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Department</TableHead>
@@ -228,7 +228,7 @@ const EnhancedStudentList: React.FC<EnhancedStudentListProps> = ({
                     <TableCell>{student.department}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
-                        Level {student.level}
+                        {student.level}
                       </Badge>
                     </TableCell>
                     <TableCell>

@@ -359,306 +359,66 @@ export class NotificationService {
       groupedResults.get(key)!.push(result);
     });
 
-    let courseResultsHtml = '';
+    let courseResultsText = '';
     
     for (const [period, results] of groupedResults) {
-      courseResultsHtml += `
-        <div style="margin-bottom: 30px;">
-          <h3 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 20px;">
-            ${period}
-          </h3>
-          <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-              <thead>
-                <tr style="background-color: #f8f9fa;">
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: left; font-weight: bold;">Course Code</th>
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: left; font-weight: bold;">Course Title</th>
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold;">CA Score</th>
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold;">Exam Score</th>
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold;">Total Score</th>
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold;">Grade</th>
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold;">Grade Point</th>
-                  <th style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold;">Credit Units</th>
-                </tr>
-              </thead>
-              <tbody>`;
+      courseResultsText += `${period}:\n`;
+      courseResultsText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       
-      results.forEach((result, index) => {
-        const rowBg = index % 2 === 0 ? '#ffffff' : '#f8f9fa';
-        courseResultsHtml += `
-                <tr style="background-color: ${rowBg};">
-                  <td style="border: 1px solid #dee2e6; padding: 12px; font-weight: bold;">${result.course_code}</td>
-                  <td style="border: 1px solid #dee2e6; padding: 12px;">${result.course_title}</td>
-                  <td style="border: 1px solid #dee2e6; padding: 12px; text-align: center;">${result.ca_score || 'N/A'}</td>
-                  <td style="border: 1px solid #dee2e6; padding: 12px; text-align: center;">${result.exam_score || 'N/A'}</td>
-                  <td style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold;">${result.total_score || 'N/A'}</td>
-                  <td style="border: 1px solid #dee2e6; padding: 12px; text-align: center; font-weight: bold; color: ${this.getGradeColor(result.grade)};">${result.grade || 'N/A'}</td>
-                  <td style="border: 1px solid #dee2e6; padding: 12px; text-align: center;">${result.grade_point || 'N/A'}</td>
-                  <td style="border: 1px solid #dee2e6; padding: 12px; text-align: center;">${result.credit_units}</td>
-                </tr>`;
+      results.forEach(result => {
+        courseResultsText += `${result.course_code} - ${result.course_title}\n`;
+        courseResultsText += `  Continuous Assessment: ${result.ca_score || 'N/A'}\n`;
+        courseResultsText += `  Examination Score: ${result.exam_score || 'N/A'}\n`;
+        courseResultsText += `  Total Score: ${result.total_score || 'N/A'}\n`;
+        courseResultsText += `  Grade: ${result.grade || 'N/A'}\n`;
+        courseResultsText += `  Grade Point: ${result.grade_point || 'N/A'}\n`;
+        courseResultsText += `  Credit Units: ${result.credit_units}\n\n`;
       });
-      
-      courseResultsHtml += `
-              </tbody>
-            </table>
-          </div>
-        </div>`;
     }
 
-    return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exam Results - EduNotify</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #3498db;
-        }
-        .logo {
-            color: #2c3e50;
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        .title {
-            color: #27ae60;
-            font-size: 28px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        .student-info {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-            border-left: 4px solid #3498db;
-        }
-        .student-info h2 {
-            color: #2c3e50;
-            margin-top: 0;
-            margin-bottom: 15px;
-        }
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-        }
-        .info-item {
-            display: flex;
-            align-items: center;
-        }
-        .info-label {
-            font-weight: bold;
-            color: #2c3e50;
-            margin-right: 8px;
-        }
-        .info-value {
-            color: #34495e;
-        }
-        .cgpa-highlight {
-            background-color: #e8f5e8;
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-            margin-top: 15px;
-        }
-        .cgpa-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #27ae60;
-        }
-        .results-section {
-            margin-bottom: 30px;
-        }
-        .results-title {
-            color: #2c3e50;
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .footer {
-            background-color: #34495e;
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 30px;
-        }
-        .footer h3 {
-            margin-top: 0;
-            color: #ecf0f1;
-        }
-        .important-notes {
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-        .important-notes h3 {
-            color: #856404;
-            margin-top: 0;
-        }
-        .contact-info {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-        .contact-info h3 {
-            color: #155724;
-            margin-top: 0;
-        }
-        .contact-info ul {
-            margin: 10px 0;
-            padding-left: 20px;
-        }
-        .contact-info li {
-            margin-bottom: 5px;
-        }
-        .timestamp {
-            text-align: center;
-            color: #6c757d;
-            font-size: 14px;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #dee2e6;
-        }
-        .disclaimer {
-            text-align: center;
-            color: #6c757d;
-            font-size: 12px;
-            font-style: italic;
-            margin-top: 10px;
-        }
-        @media (max-width: 600px) {
-            body {
-                padding: 10px;
-            }
-            .container {
-                padding: 20px;
-            }
-            .info-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="logo">Moshood Abiola Polytechnic</div>
-            <div class="title">🎓 Exam Results Published</div>
-        </div>
+    return `Dear ${fullName},
 
-        <div class="student-info">
-            <h2>Student Information</h2>
-            <div class="info-grid">
-                <div class="info-item">
-                    <span class="info-label">Student ID:</span>
-                    <span class="info-value">${student.student_id}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Full Name:</span>
-                    <span class="info-value">${fullName}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Email:</span>
-                    <span class="info-value">${student.email}</span>
-                </div>
-            </div>
-            <div class="cgpa-highlight">
-                <div style="font-size: 16px; margin-bottom: 5px;">Current CGPA</div>
-                <div class="cgpa-value">${cgpa}</div>
-            </div>
-        </div>
+We are pleased to inform you that your academic results have been published and are now available for your review.
 
-        <div class="results-section">
-            <h2 class="results-title">📊 Course Results</h2>
-            ${courseResultsHtml}
-        </div>
+STUDENT INFORMATION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Student ID: ${student.student_id}
+Current CGPA: ${cgpa}
 
-        <div style="text-align: center; margin: 30px 0;">
-            <p style="font-size: 16px; margin-bottom: 20px;">Please log in to EduNotify for more detailed information and to download your official transcript.</p>
-            <a href="#" style="display: inline-block; background-color: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Access Student Portal</a>
-        </div>
+ACADEMIC RESULTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${courseResultsText}
 
-        <div class="important-notes">
-            <h3>📋 Important Notes</h3>
-            <ul>
-                <li>This email was sent to: <strong>${student.email}</strong></li>
-                <li>If you have questions about your results, please contact the Academic Affairs Office</li>
-                <li>Keep this email for your records</li>
-            </ul>
-        </div>
+NEXT STEPS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Log in to your EduNotify student portal for detailed information
+2. Download your official transcript if needed
+3. Contact the Academic Affairs Office if you have any questions
 
-        <div class="contact-info">
-            <h3>📞 Need Help?</h3>
-            <p>If you have any questions or need assistance, please contact:</p>
-            <ul>
-                <li>Academic Affairs Office: <strong>[Phone Number]</strong></li>
-                <li>Email: <strong>[Support Email]</strong></li>
-                <li>Student Help Desk: <strong>[Help Desk Info]</strong></li>
-            </ul>
-        </div>
+CONTACT INFORMATION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Academic Affairs Office: +234-XXX-XXX-XXXX
+Email: academic.affairs@edunotify
+Student Help Desk: Available Monday-Friday, 8AM-5PM
 
-        <div class="footer">
-            <h3>Best regards,</h3>
-            <p><strong>Moshood Abiola Polytechnic</strong><br>
-            Academic Affairs Department</p>
-        </div>
+Best regards,
 
-        <div class="timestamp">
-            Sent on ${new Date().toLocaleString()}
-        </div>
-        
-        <div class="disclaimer">
-            This is an automated message. Please do not reply directly to this email.
-        </div>
-    </div>
-</body>
-</html>`;
-  }
+Academic Affairs Department
+Moshood Abiola Polytechnic
 
-  // Helper method to get grade color
-  private static getGradeColor(grade: string | null): string {
-    if (!grade) return '#6c757d';
-    
-    switch (grade.toUpperCase()) {
-      case 'A':
-        return '#28a745';
-      case 'B':
-        return '#17a2b8';
-      case 'C':
-        return '#ffc107';
-      case 'D':
-        return '#fd7e14';
-      case 'F':
-        return '#dc3545';
-      default:
-        return '#6c757d';
-    }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This message was sent to ${student.email}
+Sent on ${new Date().toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit'
+})}
+
+This is an official communication from Moshood Abiola Polytechnic.
+Please add academic.affairs@edunotify to your contacts to ensure delivery.`;
   }
 
   private static async sendDetailedNotifications(
@@ -699,7 +459,10 @@ export class NotificationService {
               student_id: student.student_id,
               message: detailedMessage,
               institution: 'Moshood Abiola Polytechnic',
-              subject: 'Your Exam Results Have Been Published - EduNotify'
+              subject: 'Academic Results Published - Moshood Abiola Polytechnic',
+              from_name: 'Academic Affairs Department',
+              from_email: 'academic.affairs@edunotify',
+              reply_to: 'academic.affairs@edunotify'
             },
             EMAILJS_PUBLIC_KEY
           );
@@ -814,7 +577,10 @@ export class NotificationService {
             student_id: student.student_id,
             message: message,
             institution: 'Moshood Abiola Polytechnic',
-            subject: title
+            subject: title,
+            from_name: 'academic.affairs@edunotify',
+            from_email: 'academic.affairs@edunotify',
+            reply_to: 'academic.affairs@edunotify'
           },
           EMAILJS_PUBLIC_KEY
         );
