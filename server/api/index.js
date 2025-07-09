@@ -3,6 +3,8 @@ const cors = require('cors');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
+const serverless = require('serverless-http');
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -308,7 +310,7 @@ app.use((err, req, res, next) => {
 });
 
 // CHANGE: Export app instead of listening
-module.exports = app;
+module.exports = serverless(app);
 
 // Remove or comment out the app.listen() code:
 // app.listen(PORT, () => {
