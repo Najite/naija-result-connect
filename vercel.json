@@ -2,16 +2,24 @@
   "version": 2,
   "builds": [
     {
+      "src": "server/api/**/*.ts",
+      "use": "@vercel/node"
+    },
+    {
       "src": "package.json",
       "use": "@vercel/static-build"
     }
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.ts"
+    },
+    {
       "handle": "filesystem"
     },
     {
-      "src": "/.*",
+      "src": "/(.*)",
       "dest": "/index.html"
     }
   ]
