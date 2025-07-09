@@ -7,9 +7,14 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// // Middleware
 app.use(express.json());
-app.use(cors({ origin: 'http://localhost:8080', credentials: true }));
+// app.use(cors({ origin: 'http://localhost:8080', credentials: true }));
+
+app.use(cors({ 
+  origin: true, 
+  credentials: true 
+}));
 
 // Initialize Supabase client
 const supabase = createClient(
