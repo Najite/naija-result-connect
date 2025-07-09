@@ -238,7 +238,7 @@ Moshood Abiola Polytechnic`;
 });
 
 // Quick result check endpoint
-app.get('/api/check-results', async (req, res) => {
+app.get('/check-results', async (req, res) => {
   try {
     const { semester, academicYear, studentId } = req.query;
 
@@ -268,7 +268,7 @@ app.get('/api/check-results', async (req, res) => {
 });
 
 // Test SMS endpoint
-app.post('/api/test-sms', async (req, res) => {
+app.post('/test-sms', async (req, res) => {
   try {
     const { phone, message } = req.body;
 
@@ -292,7 +292,7 @@ app.post('/api/test-sms', async (req, res) => {
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
