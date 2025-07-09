@@ -389,7 +389,7 @@ ACADEMIC RESULTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${courseResultsText}
 
-NEXT STEPS:
+ STEPS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Log in to your EduNotify student portal for detailed information
 2. Download your official transcript if needed
