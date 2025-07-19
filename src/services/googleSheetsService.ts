@@ -26,7 +26,7 @@ export class GoogleSheetsService {
   static async fetchFeedbackResponses(
     spreadsheetId: string,
     apiKey: string,
-    range: string = 'Sheet1!A:G'
+    /**range: string = 'Sheet1!A:G'*/
   ): Promise<FeedbackResponse[]> {
     try {
       if (!spreadsheetId || !apiKey) {
