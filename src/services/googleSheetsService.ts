@@ -176,7 +176,7 @@ export class GoogleSheetsService {
    * @returns boolean
    */
   static validateApiKey(apiKey: string): boolean {
-    // Basic validation for Google API key format
+    // Updated validation for Google API key format - they start with AIza and are 39 characters total
     return /^AIza[0-9A-Za-z-_]{35}$/.test(apiKey);
   }
 
@@ -186,7 +186,7 @@ export class GoogleSheetsService {
    * @returns boolean
    */
   static validateSpreadsheetId(spreadsheetId: string): boolean {
-    // Basic validation for Google Spreadsheet ID format
-    return /^[a-zA-Z0-9-_]{44}$/.test(spreadsheetId);
+    // Updated validation for Google Spreadsheet ID - they are typically 44 characters with alphanumeric, hyphens, and underscores
+    return /^[a-zA-Z0-9-_]{40,50}$/.test(spreadsheetId);
   }
 }
