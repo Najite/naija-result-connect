@@ -36,6 +36,7 @@ import StudentList from '@/components/admin/StudentList';
 import ResultsList from '@/components/admin/ResultsList';
 import CoursesList from '@/components/admin/CourseList';
 import NotificationCenter from '@/components/admin/NotificationCenter';
+import FeedbackTab from '@/components/admin/FeedbackTab';
 import { NotificationService } from '@/services/notificationService';
 import { useAdminData } from '@/hooks/useAdminData';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -342,12 +343,13 @@ const AdminDashboard: React.FC = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="students">Students</TabsTrigger>
             <TabsTrigger value="courses">Courses</TabsTrigger>
             <TabsTrigger value="results">Results</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="feedback">Feedback</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -635,6 +637,10 @@ const AdminDashboard: React.FC = () => {
               departments={departments}
               levels={levels}
             />
+          </TabsContent>
+
+          <TabsContent value="feedback" className="space-y-6">
+            <FeedbackTab />
           </TabsContent>
         </Tabs>
       </div>
