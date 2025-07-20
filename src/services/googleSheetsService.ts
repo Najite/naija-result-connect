@@ -47,6 +47,13 @@ export class GoogleSheetsService {
     sheetName?: string
   ): Promise<FeedbackResponse[]> {
     try {
+      console.log('Fetching feedback responses with params:', {
+        spreadsheetId,
+        apiKey: apiKey.substring(0, 10) + '...',
+        range,
+        sheetName
+      });
+
       if (!spreadsheetId || !apiKey) {
         throw new Error('Spreadsheet ID and API key are required');
       }
@@ -62,6 +69,8 @@ export class GoogleSheetsService {
 
       const url = `${this.BASE_URL}/${spreadsheetId}/values/${range}?key=${apiKey}`;
       
+      console.log('Making request to:', url);
+      
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -72,6 +81,8 @@ export class GoogleSheetsService {
       if (!response.ok) {
         const errorData = await response.json();
         const errorMessage = errorData.error?.message || response.statusText;
+        
+        console.error('Google Sheets API error:', errorData);
         
         if (response.status === 403) {
           throw new Error(`Access denied. Please check: 1) API key is valid, 2) Google Sheets API is enabled, 3) Spreadsheet is publicly accessible. Error: ${errorMessage}`);
@@ -86,6 +97,8 @@ export class GoogleSheetsService {
 
       const data: GoogleSheetsResponse = await response.json();
       
+      console.log('Raw Google Sheets response:', data);
+      
       if (!data.values || data.values.length === 0) {
         throw new Error(`No data found in range "${range}"${sheetName ? ` of sheet "${sheetName}"` : ''}. Please ensure the form has responses and the range is correct.`);
       }
@@ -93,7 +106,9 @@ export class GoogleSheetsService {
       // Skip header row and convert to FeedbackResponse objects
       const rows = data.values.slice(1);
       
-      return rows.map((row, index) => ({
+      console.log('Processing rows:', rows);
+      
+      const processedData = rows.map((row, index) => ({
         id: (index + 1).toString(),
         timestamp: row[0] || new Date().toISOString(),
         name: row[1] || 'Anonymous',
@@ -102,7 +117,11 @@ export class GoogleSheetsService {
         category: row[4] || 'General',
         message: row[5] || '',
         status: (row[6] as 'new' | 'reviewed' | 'resolved') || 'new'
-      })).filter(item => item.name !== 'Anonymous' || item.message); // Filter out empty rows
+      })).filter(item => item.name !== 'Anonymous' || item.message);
+      
+      console.log('Processed feedback data:', processedData);
+      
+      return processedData;
 
     } catch (error) {
       console.error('Error fetching Google Sheets data:', error);
@@ -119,6 +138,11 @@ export class GoogleSheetsService {
    */
   static async testConnection(spreadsheetId: string, apiKey: string, range?: string): Promise<boolean> {
     try {
+      console.log('Testing connection with:', {
+        spreadsheetId,
+        apiKey: apiKey.substring(0, 10) + '...',
+        range
+      });
       // First test basic spreadsheet access
       let url = `${this.BASE_URL}/${spreadsheetId}?key=${apiKey}&fields=properties.title,sheets.properties`;
       
@@ -131,6 +155,7 @@ export class GoogleSheetsService {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Basic spreadsheet access failed:', errorData);
         console.error('Spreadsheet access test failed:', errorData);
         return false;
       }
@@ -146,6 +171,8 @@ export class GoogleSheetsService {
         });
 
         if (!response.ok) {
+          const errorData = await response.json();
+          console.error('Range access failed:', errorData);
           console.error('Range access test failed:', await response.json());
           return false;
         }
@@ -166,6 +193,11 @@ export class GoogleSheetsService {
    */
   static async getAvailableSheets(spreadsheetId: string, apiKey: string): Promise<string[]> {
     try {
+      console.log('Getting available sheets for:', {
+        spreadsheetId,
+        apiKey: apiKey.substring(0, 10) + '...'
+      });
+      
       const url = `${this.BASE_URL}/${spreadsheetId}?key=${apiKey}&fields=sheets.properties.title`;
       
       const response = await fetch(url, {
@@ -176,6 +208,8 @@ export class GoogleSheetsService {
       });
 
       if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Get sheets error:', errorData);
         throw new Error(`Failed to get sheets: ${response.statusText}`);
       }
 
@@ -229,6 +263,11 @@ export class GoogleSheetsService {
    */
   static async getSpreadsheetInfo(spreadsheetId: string, apiKey: string): Promise<any> {
     try {
+      console.log('Getting spreadsheet info for:', {
+        spreadsheetId,
+        apiKey: apiKey.substring(0, 10) + '...'
+      });
+      
       const url = `${this.BASE_URL}/${spreadsheetId}?key=${apiKey}&fields=properties,sheets.properties`;
       
       const response = await fetch(url, {
@@ -239,6 +278,8 @@ export class GoogleSheetsService {
       });
 
       if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Get spreadsheet info error:', errorData);
         throw new Error(`Failed to get spreadsheet info: ${response.statusText}`);
       }
 
@@ -300,8 +341,8 @@ export class GoogleSheetsService {
    * @returns boolean
    */
   static validateApiKey(apiKey: string): boolean {
-    // Updated validation for Google API key format - they start with AIza and are 39 characters total
-    return /^AIza[0-9A-Za-z-_]{35}$/.test(apiKey);
+    // Google API keys start with AIza and are 39 characters total
+    return /^AIza[0-9A-Za-z\-_]{35}$/.test(apiKey);
   }
 
   /**
@@ -310,7 +351,7 @@ export class GoogleSheetsService {
    * @returns boolean
    */
   static validateSpreadsheetId(spreadsheetId: string): boolean {
-    // Updated validation for Google Spreadsheet ID - they are typically 44 characters with alphanumeric, hyphens, and underscores
-    return /^[a-zA-Z0-9-_]{40,50}$/.test(spreadsheetId);
+    // Google Spreadsheet IDs are typically 44 characters with alphanumeric, hyphens, and underscores
+    return /^[a-zA-Z0-9\-_]{40,50}$/.test(spreadsheetId);
   }
 }

@@ -46,12 +46,13 @@ const FeedbackTab: React.FC = () => {
     feedbackData,
     loading,
     error,
+    isConfigured,
     settings,
     fetchFeedbackData,
-    updateFeedbackStatus,
     getStatistics,
     filterFeedback,
-    getCategories
+    getCategories,
+    updateFeedbackStatus
   } = useFeedback();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -119,9 +120,23 @@ const FeedbackTab: React.FC = () => {
   const stats = getStatistics();
   const categories = getCategories();
 
+  // Load settings and fetch data on mount
   useEffect(() => {
-    fetchFeedbackData();
-  }, []);
+    if (isConfigured) {
+      fetchFeedbackData(false); // Don't show toast on initial load
+    }
+  }, [isConfigured, fetchFeedbackData]);
+
+  useEffect(() => {
+    // Auto-refresh if enabled
+    if (settings.autoRefresh && isConfigured) {
+      const interval = setInterval(() => {
+        fetchFeedbackData(false);
+      }, settings.refreshInterval * 60 * 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [settings.autoRefresh, settings.refreshInterval, isConfigured, fetchFeedbackData]);
 
   const getRatingColor = (rating: number) => {
     if (rating >= 4) return 'text-green-600 bg-green-100';
@@ -170,6 +185,7 @@ const FeedbackTab: React.FC = () => {
         <div className="flex gap-2">
           <Button
             onClick={fetchFeedbackData}
+            onClick={() => fetchFeedbackData(true)}
             disabled={loading}
             variant="outline"
             className="flex items-center gap-2"
@@ -177,6 +193,15 @@ const FeedbackTab: React.FC = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          {!isConfigured && (
+            <Button
+              onClick={() => window.open('#', '_self')} // This will scroll to settings
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              Configure Integration
+            </Button>
+          )}
           {settings.googleFormUrl && (
             <Button
               onClick={() => window.open(settings.googleFormUrl, '_blank')}
@@ -188,6 +213,24 @@ const FeedbackTab: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Configuration Warning */}
+      {!isConfigured && (
+        <Alert className="border-yellow-200 bg-yellow-50">
+          <AlertCircle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-yellow-800">
+            Google Forms integration is not configured. The system is currently showing demo data. 
+            Please configure your Google Form, Spreadsheet ID, and API key in the Settings tab to see real feedback data.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>
@@ -402,11 +445,27 @@ const FeedbackTab: React.FC = () => {
                 <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No feedback found</h3>
                 <p className="text-gray-600">
-                  {searchTerm || filterCategory !== 'all' || filterRating !== 'all'
+                  {!isConfigured 
+                    ? 'Please configure Google Forms integration in the Settings tab to see real feedback data.'
+                    : searchTerm || filterCategory !== 'all' || filterRating !== 'all'
                     ? 'Try adjusting your filters to see more feedback.'
                     : 'No feedback responses have been submitted yet.'
                   }
                 </p>
+                {!isConfigured && (
+                  <Button 
+                    onClick={() => {
+                      // Scroll to settings tab
+                      const settingsTab = document.querySelector('[value="settings"]');
+                      if (settingsTab) {
+                        (settingsTab as HTMLElement).click();
+                      }
+                    }}
+                    className="mt-4"
+                  >
+                    Configure Now
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -478,6 +537,12 @@ const FeedbackTab: React.FC = () => {
 
         {/* Settings Tab */}
         <TabsContent value="settings" className="space-y-6">
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Integration Settings</h3>
+            <p className="text-gray-600">
+              Configure your Google Forms integration to automatically fetch and display feedback responses.
+            </p>
+          </div>
           <FeedbackSettings />
         </TabsContent>
       </Tabs>

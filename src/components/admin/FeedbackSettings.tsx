@@ -18,7 +18,10 @@ import {
   Eye,
   Plus,
   RefreshCw,
-  FileText
+  FileText,
+  RotateCcw,
+  HelpCircle,
+  Link
 } from 'lucide-react';
 import { useFeedback } from '@/hooks/useFeedback';
 import { GoogleSheetsService } from '@/services/googleSheetsService';
@@ -28,57 +31,160 @@ const FeedbackSettings: React.FC = () => {
   const { 
     settings, 
     availableSheets, 
+    isConfigured,
     saveSettings, 
     testConnection, 
     createNewForm, 
-    fetchAvailableSheets, 
+    fetchAvailableSheets,
+    validateSettings,
+    resetSettings,
     loading 
   } = useFeedback();
+  
   const [formData, setFormData] = useState(settings);
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [createFormOpen, setCreateFormOpen] = useState(false);
   const [newFormData, setNewFormData] = useState({
-    title: 'Student Feedback Form',
-    description: 'Please provide your feedback to help us improve our services.'
+    title: 'Student Feedback Form - EduNotify',
+    description: 'Please provide your feedback to help us improve our educational notification system.'
   });
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  
   const { toast } = useToast();
 
+  // Update form data when settings change
   useEffect(() => {
     setFormData(settings);
   }, [settings]);
 
+  // Validate form data in real-time
+  useEffect(() => {
+    const errors = [];
+    
+    if (formData.spreadsheetId && !GoogleSheetsService.validateSpreadsheetId(formData.spreadsheetId)) {
+      errors.push('Invalid Spreadsheet ID format');
+    }
+    
+    if (formData.apiKey && !GoogleSheetsService.validateApiKey(formData.apiKey)) {
+      errors.push('Invalid API Key format');
+    }
+    
+    setValidationErrors(errors);
+  }, [formData]);
+
   const handleInputChange = (field: keyof typeof formData, value: string | boolean | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    setTestResult(null); // Clear test result when settings change
   };
 
   const handleSave = () => {
-    // Validate inputs
-    if (formData.spreadsheetId && !GoogleSheetsService.validateSpreadsheetId(formData.spreadsheetId)) {
+    console.log('Saving settings:', formData);
+    
+    // Validate required fields
+    if (!formData.spreadsheetId?.trim()) {
       toast({
-        title: "Invalid Spreadsheet ID",
-        description: "Please enter a valid Google Spreadsheet ID.",
+        title: "Missing Spreadsheet ID",
+        description: "Please enter your Google Spreadsheet ID.",
         variant: "destructive"
       });
       return;
     }
 
-    if (formData.apiKey && !GoogleSheetsService.validateApiKey(formData.apiKey)) {
+    if (!formData.apiKey?.trim()) {
       toast({
-        title: "Invalid API Key",
-        description: "Please enter a valid Google Sheets API key.",
+        title: "Missing API Key",
+        description: "Please enter your Google Sheets API key.",
         variant: "destructive"
       });
       return;
     }
 
-    saveSettings(formData);
+    if (!formData.sheetRange?.trim()) {
+      toast({
+        title: "Missing Sheet Range",
+        description: "Please specify the sheet range (e.g., 'Form Responses 1'!A:G).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate formats
+    if (validationErrors.length > 0) {
+      toast({
+        title: "Validation Error",
+        description: validationErrors.join(', '),
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const success = saveSettings(formData);
+    if (success) {
+      setTestResult(null);
+    }
   };
 
   const handleTest = async () => {
+    console.log('Testing connection with current form data:', formData);
+    
+    // Save current form data to settings first
+    const tempSettings = { ...settings, ...formData };
+    
+    // Validate
+    const errors = [];
+    if (!tempSettings.spreadsheetId?.trim()) errors.push('Spreadsheet ID');
+    if (!tempSettings.apiKey?.trim()) errors.push('API Key');
+    if (!tempSettings.sheetRange?.trim()) errors.push('Sheet Range');
+    
+    if (errors.length > 0) {
+      toast({
+        title: "Missing Configuration",
+        description: `Please provide: ${errors.join(', ')}`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     setTestResult(null);
-    const result = await testConnection();
-    setTestResult(result ? 'success' : 'error');
+    
+    try {
+      // Test with current form data
+      const isConnected = await GoogleSheetsService.testConnection(
+        tempSettings.spreadsheetId,
+        tempSettings.apiKey,
+        tempSettings.sheetRange
+      );
+      
+      if (isConnected) {
+        setTestResult('success');
+        toast({
+          title: "Connection Successful",
+          description: "Successfully connected to Google Sheets!"
+        });
+        
+        // Fetch available sheets
+        try {
+          const sheets = await GoogleSheetsService.getAvailableSheets(
+            tempSettings.spreadsheetId,
+            tempSettings.apiKey
+          );
+          console.log('Available sheets after test:', sheets);
+        } catch (error) {
+          console.error('Error fetching sheets after successful test:', error);
+        }
+      } else {
+        setTestResult('error');
+      }
+    } catch (error) {
+      console.error('Test connection error:', error);
+      setTestResult('error');
+      toast({
+        title: "Connection Failed",
+        description: error instanceof Error ? error.message : "Failed to connect to Google Sheets.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleCreateForm = async () => {
@@ -86,19 +192,41 @@ const FeedbackSettings: React.FC = () => {
     if (success) {
       setCreateFormOpen(false);
       setNewFormData({
-        title: 'Student Feedback Form',
-        description: 'Please provide your feedback to help us improve our services.'
+        title: 'Student Feedback Form - EduNotify',
+        description: 'Please provide your feedback to help us improve our educational notification system.'
       });
     }
   };
 
   const handleFetchSheets = async () => {
-    await fetchAvailableSheets();
-    toast({
-      title: "Sheets Refreshed",
-      description: `Found ${availableSheets.length} sheet(s) in the spreadsheet.`
-    });
+    if (!formData.spreadsheetId?.trim() || !formData.apiKey?.trim()) {
+      toast({
+        title: "Missing Configuration",
+        description: "Please provide Spreadsheet ID and API Key first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const sheets = await GoogleSheetsService.getAvailableSheets(
+        formData.spreadsheetId,
+        formData.apiKey
+      );
+      
+      toast({
+        title: "Sheets Refreshed",
+        description: `Found ${sheets.length} sheet(s) in the spreadsheet.`
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch sheets.",
+        variant: "destructive"
+      });
+    }
   };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast({
@@ -107,79 +235,118 @@ const FeedbackSettings: React.FC = () => {
     });
   };
 
-  const sampleFormStructure = `
-Timestamp | Name | Email | Rating | Category | Message | Status
----------|------|-------|--------|----------|---------|--------
-1/15/2024 10:30:00 | John Doe | john@email.com | 5 | UI/UX | Great interface! | new
-1/14/2024 14:20:00 | Jane Smith | jane@email.com | 4 | Features | Love the new features | reviewed
-  `;
+  const extractSpreadsheetId = (url: string) => {
+    const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return match ? match[1] : '';
+  };
+
+  const handleSpreadsheetUrlPaste = (url: string) => {
+    const id = extractSpreadsheetId(url);
+    if (id) {
+      handleInputChange('spreadsheetId', id);
+      toast({
+        title: "Spreadsheet ID Extracted",
+        description: "Spreadsheet ID has been automatically extracted from the URL."
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
+      {/* Configuration Status */}
+      <Card className={isConfigured ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}>
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2">
+            {isConfigured ? (
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            ) : (
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
+            )}
+            <span className={`font-medium ${isConfigured ? 'text-green-800' : 'text-yellow-800'}`}>
+              {isConfigured ? 'Google Forms integration is configured' : 'Google Forms integration needs configuration'}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick Setup */}
       <Card>
         <CardHeader>
-          <CardTitle>Google Forms Integration</CardTitle>
+          <CardTitle>Quick Setup</CardTitle>
           <CardDescription>
-            Configure your Google Form and Google Sheets integration to automatically fetch feedback responses.
+            Get started quickly with Google Forms integration
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Dialog open={createFormOpen} onOpenChange={setCreateFormOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="h-20 flex flex-col items-center justify-center gap-2">
+                  <Plus className="w-6 h-6" />
+                  <span>Create New Form</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Feedback Form</DialogTitle>
+                  <DialogDescription>
+                    This will open a Google Form template that you can customize and save.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="formTitle">Form Title</Label>
+                    <Input
+                      id="formTitle"
+                      value={newFormData.title}
+                      onChange={(e) => setNewFormData(prev => ({ ...prev, title: e.target.value }))}
+                      placeholder="Student Feedback Form"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="formDescription">Form Description</Label>
+                    <Textarea
+                      id="formDescription"
+                      value={newFormData.description}
+                      onChange={(e) => setNewFormData(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Please provide your feedback..."
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setCreateFormOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateForm}>
+                    <FileText className="w-4 h-4 mr-2" />
+                    Create Template
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Button 
+              variant="outline" 
+              className="h-20 flex flex-col items-center justify-center gap-2"
+              onClick={() => window.open('https://console.cloud.google.com/apis/library/sheets.googleapis.com', '_blank')}
+            >
+              <Link className="w-6 h-6" />
+              <span>Setup API Key</span>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Main Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Google Forms Configuration</CardTitle>
+          <CardDescription>
+            Configure your Google Form and Google Sheets integration
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Create New Form Section */}
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="font-medium text-blue-900">Need a new feedback form?</h4>
-              <Dialog open={createFormOpen} onOpenChange={setCreateFormOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-blue-700 border-blue-300">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Form
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create New Feedback Form</DialogTitle>
-                    <DialogDescription>
-                      This will open a Google Form template that you can customize and save.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="formTitle">Form Title</Label>
-                      <Input
-                        id="formTitle"
-                        value={newFormData.title}
-                        onChange={(e) => setNewFormData(prev => ({ ...prev, title: e.target.value }))}
-                        placeholder="Student Feedback Form"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="formDescription">Form Description</Label>
-                      <Textarea
-                        id="formDescription"
-                        value={newFormData.description}
-                        onChange={(e) => setNewFormData(prev => ({ ...prev, description: e.target.value }))}
-                        placeholder="Please provide your feedback..."
-                        rows={3}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setCreateFormOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleCreateForm}>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Create Template
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-            <p className="text-sm text-blue-700">
-              We'll create a Google Form template with the recommended fields for feedback collection.
-            </p>
-          </div>
-
           {/* Form Name */}
           <div className="space-y-2">
             <Label htmlFor="formName">Form Name (Optional)</Label>
@@ -221,13 +388,21 @@ Timestamp | Name | Email | Rating | Category | Message | Status
 
           {/* Google Sheets ID */}
           <div className="space-y-2">
-            <Label htmlFor="spreadsheetId">Google Sheets ID</Label>
+            <Label htmlFor="spreadsheetId">Google Spreadsheet ID *</Label>
             <div className="flex gap-2">
               <Input
                 id="spreadsheetId"
                 value={formData.spreadsheetId}
                 onChange={(e) => handleInputChange('spreadsheetId', e.target.value)}
+                onPaste={(e) => {
+                  const pastedText = e.clipboardData.getData('text');
+                  if (pastedText.includes('spreadsheets/d/')) {
+                    e.preventDefault();
+                    handleSpreadsheetUrlPaste(pastedText);
+                  }
+                }}
                 placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                className={validationErrors.some(e => e.includes('Spreadsheet ID')) ? 'border-red-300' : ''}
               />
               <Button
                 variant="outline"
@@ -239,24 +414,52 @@ Timestamp | Name | Email | Rating | Category | Message | Status
               </Button>
             </div>
             <p className="text-sm text-gray-500">
-              The ID of the Google Sheet where form responses are stored. Found in the sheet URL.
+              The ID of the Google Sheet where form responses are stored. You can paste the full spreadsheet URL here.
+            </p>
+          </div>
+
+          {/* API Key */}
+          <div className="space-y-2">
+            <Label htmlFor="apiKey">Google Sheets API Key *</Label>
+            <div className="flex gap-2">
+              <Input
+                id="apiKey"
+                type={showApiKey ? "text" : "password"}
+                value={formData.apiKey}
+                onChange={(e) => handleInputChange('apiKey', e.target.value)}
+                placeholder="AIzaSyD..."
+                className={validationErrors.some(e => e.includes('API Key')) ? 'border-red-300' : ''}
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setShowApiKey(!showApiKey)}
+              >
+                <Eye className="w-4 h-4" />
+              </Button>
+            </div>
+            <p className="text-sm text-gray-500">
+              Your Google Sheets API key. Must start with "AIza" and be 39 characters long.
             </p>
           </div>
 
           {/* Sheet Range */}
           <div className="space-y-2">
-            <Label htmlFor="sheetRange">Sheet Range</Label>
+            <Label htmlFor="sheetRange">Sheet Range *</Label>
             <div className="flex gap-2">
               <Input
                 id="sheetRange"
                 value={formData.sheetRange}
                 onChange={(e) => handleInputChange('sheetRange', e.target.value)}
-                placeholder="Sheet1!A:G or 'Form Responses 1'!A:G"
+                placeholder="'Form Responses 1'!A:G"
               />
               {availableSheets.length > 0 && (
                 <Select 
                   value={formData.sheetRange.split('!')[0].replace(/'/g, '')} 
-                  onValueChange={(sheetName) => handleInputChange('sheetRange', `'${sheetName}'!A:G`)}
+                  onValueChange={(sheetName) => {
+                    const range = sheetName.includes(' ') ? `'${sheetName}'!A:G` : `${sheetName}!A:G`;
+                    handleInputChange('sheetRange', range);
+                  }}
                 >
                   <SelectTrigger className="w-48">
                     <SelectValue placeholder="Select sheet" />
@@ -272,41 +475,32 @@ Timestamp | Name | Email | Rating | Category | Message | Status
                 variant="outline"
                 size="icon"
                 onClick={handleFetchSheets}
-                disabled={!formData.spreadsheetId || !formData.apiKey}
+                disabled={!formData.spreadsheetId || !formData.apiKey || loading}
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
             <p className="text-sm text-gray-500">
-              The range of cells to fetch (e.g., 'Form Responses 1'!A:G). Use single quotes around sheet names with spaces.
-            </p>
-          </div>
-          {/* API Key */}
-          <div className="space-y-2">
-            <Label htmlFor="apiKey">Google Sheets API Key</Label>
-            <div className="flex gap-2">
-              <Input
-                id="apiKey"
-                type={showApiKey ? "text" : "password"}
-                value={formData.apiKey}
-                onChange={(e) => handleInputChange('apiKey', e.target.value)}
-                placeholder="AIzaSyD..."
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setShowApiKey(!showApiKey)}
-              >
-                <Eye className="w-4 h-4" />
-              </Button>
-            </div>
-            <p className="text-sm text-gray-500">
-              Your Google Sheets API key for accessing the spreadsheet data.
+              The range of cells to fetch. Common formats: 'Form Responses 1'!A:G, Sheet1!A:G
             </p>
           </div>
 
+          {/* Validation Errors */}
+          {validationErrors.length > 0 && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <ul className="list-disc list-inside">
+                  {validationErrors.map((error, index) => (
+                    <li key={index}>{error}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Auto Refresh Settings */}
-          <div className="space-y-4">
+          <div className="space-y-4 border-t pt-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Auto Refresh</Label>
@@ -336,14 +530,31 @@ Timestamp | Name | Email | Rating | Category | Message | Status
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button onClick={handleTest} disabled={loading || !formData.spreadsheetId || !formData.apiKey}>
+          <div className="flex gap-2 pt-4">
+            <Button 
+              onClick={handleTest} 
+              disabled={loading || validationErrors.length > 0}
+              variant="outline"
+            >
               <TestTube className="w-4 h-4 mr-2" />
               {loading ? 'Testing...' : 'Test Connection'}
             </Button>
-            <Button onClick={handleSave} variant="outline">
+            
+            <Button 
+              onClick={handleSave} 
+              disabled={validationErrors.length > 0}
+            >
               <Save className="w-4 h-4 mr-2" />
               Save Settings
+            </Button>
+            
+            <Button 
+              onClick={resetSettings} 
+              variant="destructive"
+              size="sm"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Reset
             </Button>
           </div>
 
@@ -358,7 +569,7 @@ Timestamp | Name | Email | Rating | Category | Message | Status
               <AlertDescription className={testResult === 'success' ? 'text-green-800' : 'text-red-800'}>
                 {testResult === 'success' 
                   ? 'Connection successful! Your Google Sheets integration is working correctly.'
-                  : 'Connection failed. Please check your Spreadsheet ID, API key, and sheet range.'
+                  : 'Connection failed. Please check your configuration and try again.'
                 }
               </AlertDescription>
             </Alert>
@@ -369,71 +580,83 @@ Timestamp | Name | Email | Rating | Category | Message | Status
       {/* Setup Instructions */}
       <Card>
         <CardHeader>
-          <CardTitle>Setup Instructions</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <HelpCircle className="w-5 h-5" />
+            Setup Instructions
+          </CardTitle>
           <CardDescription>
-            Follow these steps to set up Google Forms integration
+            Step-by-step guide to set up Google Forms integration
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-900">1. Create Google Form</h4>
-              <p className="text-sm text-gray-600">
-                Create a Google Form with the following fields (in this exact order):
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span>
+                Create Google Form
+              </h4>
+              <p className="text-sm text-gray-600 ml-8">
+                Create a Google Form with these fields in exact order:
               </p>
-              <ul className="text-sm text-gray-600 list-disc list-inside ml-4 space-y-1">
-                <li><strong>Name</strong> - Short answer text</li>
-                <li><strong>Email</strong> - Short answer text</li>
-                <li><strong>Rating</strong> - Linear scale (1-5)</li>
-                <li><strong>Category</strong> - Multiple choice (UI/UX, Features, Performance, Bug Report, etc.)</li>
-                <li><strong>Message</strong> - Paragraph text</li>
-                <li><strong>Status</strong> - Multiple choice (new, reviewed, resolved) - Optional</li>
-              </ul>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-900">2. Link to Google Sheets</h4>
-              <p className="text-sm text-gray-600">
-                In your Google Form, click "Responses" → "Create Spreadsheet" to automatically create a linked sheet.
-                Note the sheet name (usually "Form Responses 1") for the range configuration.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-900">3. Enable Google Sheets API</h4>
-              <ol className="text-sm text-gray-600 list-decimal list-inside ml-4 space-y-1">
-                <li>Go to <a href="https://console.cloud.google.com/" target="_blank" className="text-blue-600 hover:underline">Google Cloud Console</a></li>
-                <li>Create a new project or select existing one</li>
-                <li>Enable the Google Sheets API</li>
-                <li>Create credentials (API Key)</li>
-                <li>Restrict the API key to Google Sheets API only</li>
-              </ol>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-900">4. Make Spreadsheet Public</h4>
-              <p className="text-sm text-gray-600">
-                Share your Google Sheet with "Anyone with the link can view" permissions.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-900">5. Configure Range</h4>
-              <p className="text-sm text-gray-600">
-                Common range formats:
-              </p>
-              <ul className="text-sm text-gray-600 list-disc list-inside ml-4 space-y-1">
-                <li><code>'Form Responses 1'!A:G</code> - Default form responses sheet</li>
-                <li><code>Sheet1!A:G</code> - First sheet with columns A through G</li>
-                <li><code>'Feedback Data'!A1:G1000</code> - Specific range in a custom sheet</li>
-              </ul>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-900">6. Expected Sheet Structure</h4>
-              <div className="bg-gray-50 p-3 rounded-md">
-                <pre className="text-xs text-gray-700 whitespace-pre-wrap">{sampleFormStructure}</pre>
+              <div className="ml-8 bg-gray-50 p-3 rounded-md">
+                <ul className="text-sm text-gray-700 space-y-1">
+                  <li><strong>Column A:</strong> Timestamp (automatic)</li>
+                  <li><strong>Column B:</strong> Name (Short answer)</li>
+                  <li><strong>Column C:</strong> Email (Short answer)</li>
+                  <li><strong>Column D:</strong> Rating (Linear scale 1-5)</li>
+                  <li><strong>Column E:</strong> Category (Multiple choice)</li>
+                  <li><strong>Column F:</strong> Message (Paragraph)</li>
+                  <li><strong>Column G:</strong> Status (Multiple choice: new, reviewed, resolved)</li>
+                </ul>
               </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span>
+                Link to Google Sheets
+              </h4>
+              <p className="text-sm text-gray-600 ml-8">
+                In your form: Responses → Create Spreadsheet → Create new spreadsheet
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span>
+                Get API Key
+              </h4>
+              <div className="ml-8 space-y-2">
+                <p className="text-sm text-gray-600">
+                  Go to <a href="https://console.cloud.google.com/" target="_blank" className="text-blue-600 hover:underline">Google Cloud Console</a>
+                </p>
+                <ol className="text-sm text-gray-600 list-decimal list-inside space-y-1">
+                  <li>Create/select project</li>
+                  <li>Enable Google Sheets API</li>
+                  <li>Create credentials → API Key</li>
+                  <li>Restrict to Google Sheets API</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">4</span>
+                Make Sheet Public
+              </h4>
+              <p className="text-sm text-gray-600 ml-8">
+                Share your spreadsheet: "Anyone with the link can view"
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">5</span>
+                Configure Above
+              </h4>
+              <p className="text-sm text-gray-600 ml-8">
+                Enter your Form URL, Spreadsheet ID, API Key, and Range, then test the connection.
+              </p>
             </div>
           </div>
         </CardContent>
