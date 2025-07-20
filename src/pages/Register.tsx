@@ -21,7 +21,7 @@ const Register = () => {
     department: "",
     level: "",
     password: "",
-    confirmPassword: ""
+    confirmPassword: "" 
   });
 
   const nigeriaCodes = ["+234"];
