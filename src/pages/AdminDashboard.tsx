@@ -36,6 +36,7 @@ import StudentList from '@/components/admin/StudentList';
 import ResultsList from '@/components/admin/ResultsList';
 import CoursesList from '@/components/admin/CourseList';
 import NotificationCenter from '@/components/admin/NotificationCenter';
+import FeedbackDisplay from '@/components/admin/FeedBackDisplay';
 import { NotificationService } from '@/services/notificationService';
 import { useAdminData } from '@/hooks/useAdminData';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -88,6 +89,7 @@ const INITIAL_CUSTOM_FORM: CustomNotificationForm = {
 };
 
 const AdminDashboard: React.FC = () => {
+  const feedbackUrl = 'https://script.google.com/macros/s/AKfycbzEJvcAtfsVDSKYhEH09pwbnc5si5ia2GtMSaP0MKpbwGDwbQGps0PyJG9pSpGl7fMb/exec';
   const { admin, logout } = useAuth();
   const { toast } = useToast();
   
@@ -348,9 +350,21 @@ const AdminDashboard: React.FC = () => {
             <TabsTrigger value="courses">Courses</TabsTrigger>
             <TabsTrigger value="results">Results</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="feedback">Feedback</TabsTrigger>
+
           </TabsList>
 
+          <TabsContent value="feedback" className="space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900">Feedback</h2>
+            <p className="text-gray-600">View all feedback entries.</p>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <FeedbackDisplay feedbackUrl={feedbackUrl} />
+            </div>
+          </TabsContent>
+
           <TabsContent value="overview" className="space-y-6">
+                        
+            
             <QuickStats students={fullStudents} results={results} courses={courses} />
             <DepartmentChart students={students} />
             
