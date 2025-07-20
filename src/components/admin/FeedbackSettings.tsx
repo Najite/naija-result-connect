@@ -5,6 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { 
   ExternalLink, 
   TestTube, 
@@ -12,17 +15,33 @@ import {
   AlertCircle, 
   CheckCircle,
   Copy,
-  Eye
+  Eye,
+  Plus,
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 import { useFeedback } from '@/hooks/useFeedback';
 import { GoogleSheetsService } from '@/services/googleSheetsService';
 import { useToast } from '@/hooks/use-toast';
 
 const FeedbackSettings: React.FC = () => {
-  const { settings, saveSettings, testConnection, loading } = useFeedback();
+  const { 
+    settings, 
+    availableSheets, 
+    saveSettings, 
+    testConnection, 
+    createNewForm, 
+    fetchAvailableSheets, 
+    loading 
+  } = useFeedback();
   const [formData, setFormData] = useState(settings);
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [createFormOpen, setCreateFormOpen] = useState(false);
+  const [newFormData, setNewFormData] = useState({
+    title: 'Student Feedback Form',
+    description: 'Please provide your feedback to help us improve our services.'
+  });
   const { toast } = useToast();
 
   useEffect(() => {
@@ -62,6 +81,24 @@ const FeedbackSettings: React.FC = () => {
     setTestResult(result ? 'success' : 'error');
   };
 
+  const handleCreateForm = async () => {
+    const success = await createNewForm(newFormData.title, newFormData.description);
+    if (success) {
+      setCreateFormOpen(false);
+      setNewFormData({
+        title: 'Student Feedback Form',
+        description: 'Please provide your feedback to help us improve our services.'
+      });
+    }
+  };
+
+  const handleFetchSheets = async () => {
+    await fetchAvailableSheets();
+    toast({
+      title: "Sheets Refreshed",
+      description: `Found ${availableSheets.length} sheet(s) in the spreadsheet.`
+    });
+  };
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast({
@@ -87,6 +124,76 @@ Timestamp | Name | Email | Rating | Category | Message | Status
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Create New Form Section */}
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-medium text-blue-900">Need a new feedback form?</h4>
+              <Dialog open={createFormOpen} onOpenChange={setCreateFormOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-blue-700 border-blue-300">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Form
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create New Feedback Form</DialogTitle>
+                    <DialogDescription>
+                      This will open a Google Form template that you can customize and save.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="formTitle">Form Title</Label>
+                      <Input
+                        id="formTitle"
+                        value={newFormData.title}
+                        onChange={(e) => setNewFormData(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="Student Feedback Form"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="formDescription">Form Description</Label>
+                      <Textarea
+                        id="formDescription"
+                        value={newFormData.description}
+                        onChange={(e) => setNewFormData(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Please provide your feedback..."
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setCreateFormOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleCreateForm}>
+                      <FileText className="w-4 h-4 mr-2" />
+                      Create Template
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <p className="text-sm text-blue-700">
+              We'll create a Google Form template with the recommended fields for feedback collection.
+            </p>
+          </div>
+
+          {/* Form Name */}
+          <div className="space-y-2">
+            <Label htmlFor="formName">Form Name (Optional)</Label>
+            <Input
+              id="formName"
+              value={formData.formName}
+              onChange={(e) => handleInputChange('formName', e.target.value)}
+              placeholder="Student Feedback Form"
+            />
+            <p className="text-sm text-gray-500">
+              A descriptive name for your form (for reference only).
+            </p>
+          </div>
+
           {/* Google Form URL */}
           <div className="space-y-2">
             <Label htmlFor="googleFormUrl">Google Form URL</Label>
@@ -136,6 +243,44 @@ Timestamp | Name | Email | Rating | Category | Message | Status
             </p>
           </div>
 
+          {/* Sheet Range */}
+          <div className="space-y-2">
+            <Label htmlFor="sheetRange">Sheet Range</Label>
+            <div className="flex gap-2">
+              <Input
+                id="sheetRange"
+                value={formData.sheetRange}
+                onChange={(e) => handleInputChange('sheetRange', e.target.value)}
+                placeholder="Sheet1!A:G or 'Form Responses 1'!A:G"
+              />
+              {availableSheets.length > 0 && (
+                <Select 
+                  value={formData.sheetRange.split('!')[0].replace(/'/g, '')} 
+                  onValueChange={(sheetName) => handleInputChange('sheetRange', `'${sheetName}'!A:G`)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Select sheet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSheets.map(sheet => (
+                      <SelectItem key={sheet} value={sheet}>{sheet}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleFetchSheets}
+                disabled={!formData.spreadsheetId || !formData.apiKey}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+            <p className="text-sm text-gray-500">
+              The range of cells to fetch (e.g., 'Form Responses 1'!A:G). Use single quotes around sheet names with spaces.
+            </p>
+          </div>
           {/* API Key */}
           <div className="space-y-2">
             <Label htmlFor="apiKey">Google Sheets API Key</Label>
@@ -213,7 +358,7 @@ Timestamp | Name | Email | Rating | Category | Message | Status
               <AlertDescription className={testResult === 'success' ? 'text-green-800' : 'text-red-800'}>
                 {testResult === 'success' 
                   ? 'Connection successful! Your Google Sheets integration is working correctly.'
-                  : 'Connection failed. Please check your Spreadsheet ID and API key.'
+                  : 'Connection failed. Please check your Spreadsheet ID, API key, and sheet range.'
                 }
               </AlertDescription>
             </Alert>
@@ -250,6 +395,7 @@ Timestamp | Name | Email | Rating | Category | Message | Status
               <h4 className="font-medium text-gray-900">2. Link to Google Sheets</h4>
               <p className="text-sm text-gray-600">
                 In your Google Form, click "Responses" → "Create Spreadsheet" to automatically create a linked sheet.
+                Note the sheet name (usually "Form Responses 1") for the range configuration.
               </p>
             </div>
 
@@ -272,7 +418,19 @@ Timestamp | Name | Email | Rating | Category | Message | Status
             </div>
 
             <div className="space-y-2">
-              <h4 className="font-medium text-gray-900">5. Expected Sheet Structure</h4>
+              <h4 className="font-medium text-gray-900">5. Configure Range</h4>
+              <p className="text-sm text-gray-600">
+                Common range formats:
+              </p>
+              <ul className="text-sm text-gray-600 list-disc list-inside ml-4 space-y-1">
+                <li><code>'Form Responses 1'!A:G</code> - Default form responses sheet</li>
+                <li><code>Sheet1!A:G</code> - First sheet with columns A through G</li>
+                <li><code>'Feedback Data'!A1:G1000</code> - Specific range in a custom sheet</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="font-medium text-gray-900">6. Expected Sheet Structure</h4>
               <div className="bg-gray-50 p-3 rounded-md">
                 <pre className="text-xs text-gray-700 whitespace-pre-wrap">{sampleFormStructure}</pre>
               </div>

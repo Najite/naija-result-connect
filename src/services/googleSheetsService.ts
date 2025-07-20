@@ -13,24 +13,51 @@ interface FeedbackResponse {
   status: 'new' | 'reviewed' | 'resolved';
 }
 
+interface FormCreationData {
+  title: string;
+  description: string;
+  fields: FormField[];
+}
+
+interface FormField {
+  type: 'text' | 'email' | 'scale' | 'choice' | 'paragraph';
+  title: string;
+  required: boolean;
+  options?: string[];
+  scaleMin?: number;
+  scaleMax?: number;
+}
+
 export class GoogleSheetsService {
   private static readonly BASE_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
+  private static readonly FORMS_BASE_URL = 'https://forms.googleapis.com/v1/forms';
 
   /**
    * Fetch feedback responses from Google Sheets
    * @param spreadsheetId - The ID of the Google Spreadsheet
    * @param apiKey - Google Sheets API key
-   * @param range - The range to fetch (default: 'Sheet1!A:G')
+   * @param range - The range to fetch (e.g., 'Sheet1!A:G' or 'Form Responses 1!A:G')
+   * @param sheetName - Optional sheet name for better error messages
    * @returns Promise<FeedbackResponse[]>
    */
   static async fetchFeedbackResponses(
     spreadsheetId: string,
     apiKey: string,
-    /**range: string = 'Sheet1!A:G'*/
+    range: string = 'Sheet1!A:G',
+    sheetName?: string
   ): Promise<FeedbackResponse[]> {
     try {
       if (!spreadsheetId || !apiKey) {
         throw new Error('Spreadsheet ID and API key are required');
+      }
+
+      // Validate inputs
+      if (!this.validateSpreadsheetId(spreadsheetId)) {
+        throw new Error('Invalid Spreadsheet ID format');
+      }
+
+      if (!this.validateApiKey(apiKey)) {
+        throw new Error('Invalid API key format');
       }
 
       const url = `${this.BASE_URL}/${spreadsheetId}/values/${range}?key=${apiKey}`;
@@ -44,13 +71,23 @@ export class GoogleSheetsService {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(`Google Sheets API error: ${errorData.error?.message || response.statusText}`);
+        const errorMessage = errorData.error?.message || response.statusText;
+        
+        if (response.status === 403) {
+          throw new Error(`Access denied. Please check: 1) API key is valid, 2) Google Sheets API is enabled, 3) Spreadsheet is publicly accessible. Error: ${errorMessage}`);
+        } else if (response.status === 404) {
+          throw new Error(`Spreadsheet or range not found. Please check: 1) Spreadsheet ID is correct, 2) Range "${range}" exists${sheetName ? ` in sheet "${sheetName}"` : ''}. Error: ${errorMessage}`);
+        } else if (response.status === 400) {
+          throw new Error(`Invalid request. Please check the range format "${range}". Error: ${errorMessage}`);
+        }
+        
+        throw new Error(`Google Sheets API error (${response.status}): ${errorMessage}`);
       }
 
       const data: GoogleSheetsResponse = await response.json();
       
       if (!data.values || data.values.length === 0) {
-        return [];
+        throw new Error(`No data found in range "${range}"${sheetName ? ` of sheet "${sheetName}"` : ''}. Please ensure the form has responses and the range is correct.`);
       }
 
       // Skip header row and convert to FeedbackResponse objects
@@ -77,11 +114,59 @@ export class GoogleSheetsService {
    * Test connection to Google Sheets
    * @param spreadsheetId - The ID of the Google Spreadsheet
    * @param apiKey - Google Sheets API key
+   * @param range - Optional range to test
    * @returns Promise<boolean>
    */
-  static async testConnection(spreadsheetId: string, apiKey: string): Promise<boolean> {
+  static async testConnection(spreadsheetId: string, apiKey: string, range?: string): Promise<boolean> {
     try {
-      const url = `${this.BASE_URL}/${spreadsheetId}?key=${apiKey}&fields=properties.title`;
+      // First test basic spreadsheet access
+      let url = `${this.BASE_URL}/${spreadsheetId}?key=${apiKey}&fields=properties.title,sheets.properties`;
+      
+      let response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Spreadsheet access test failed:', errorData);
+        return false;
+      }
+
+      // If range is provided, test range access
+      if (range) {
+        url = `${this.BASE_URL}/${spreadsheetId}/values/${range}?key=${apiKey}`;
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          console.error('Range access test failed:', await response.json());
+          return false;
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error testing Google Sheets connection:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get available sheets in a spreadsheet
+   * @param spreadsheetId - The ID of the Google Spreadsheet
+   * @param apiKey - Google Sheets API key
+   * @returns Promise<string[]>
+   */
+  static async getAvailableSheets(spreadsheetId: string, apiKey: string): Promise<string[]> {
+    try {
+      const url = `${this.BASE_URL}/${spreadsheetId}?key=${apiKey}&fields=sheets.properties.title`;
       
       const response = await fetch(url, {
         method: 'GET',
@@ -90,11 +175,50 @@ export class GoogleSheetsService {
         },
       });
 
-      return response.ok;
+      if (!response.ok) {
+        throw new Error(`Failed to get sheets: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.sheets?.map((sheet: any) => sheet.properties.title) || [];
     } catch (error) {
-      console.error('Error testing Google Sheets connection:', error);
-      return false;
+      console.error('Error getting available sheets:', error);
+      throw error;
     }
+  }
+
+  /**
+   * Create a new Google Form for feedback collection
+   * @param title - Form title
+   * @param description - Form description
+   * @param apiKey - Google Forms API key (requires OAuth, not just API key)
+   * @returns Promise<any>
+   */
+  static async createFeedbackForm(title: string, description: string, apiKey: string): Promise<any> {
+    try {
+      // Note: This requires OAuth authentication, not just an API key
+      // For now, we'll return instructions for manual creation
+      throw new Error('Google Forms API requires OAuth authentication. Please create the form manually using the provided template.');
+    } catch (error) {
+      console.error('Error creating Google Form:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a Google Form template URL for manual creation
+   * @param title - Form title
+   * @param description - Form description
+   * @returns string - URL to create form with pre-filled template
+   */
+  static generateFormTemplate(title: string, description: string): string {
+    const baseUrl = 'https://docs.google.com/forms/create';
+    const params = new URLSearchParams({
+      title: title || 'Student Feedback Form',
+      description: description || 'Please provide your feedback to help us improve our services.'
+    });
+    
+    return `${baseUrl}?${params.toString()}`;
   }
 
   /**

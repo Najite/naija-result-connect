@@ -71,6 +71,8 @@ interface FeedbackSettings {
   googleFormUrl: string;
   spreadsheetId: string;
   apiKey: string;
+  formName: string;
+  sheetRange: string;
   autoRefresh: boolean;
   refreshInterval: number; // in minutes
 }
@@ -79,10 +81,13 @@ export const useFeedback = () => {
   const [feedbackData, setFeedbackData] = useState<FeedbackResponse[]>(mockFeedbackData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const [settings, setSettings] = useState<FeedbackSettings>({
     googleFormUrl: '',
     spreadsheetId: '',
     apiKey: '',
+    formName: '',
+    sheetRange: 'Sheet1!A:G',
     autoRefresh: false,
     refreshInterval: 5
   });
@@ -123,15 +128,30 @@ export const useFeedback = () => {
     }
   }, [settings, toast]);
 
+  // Fetch available sheets
+  const fetchAvailableSheets = useCallback(async () => {
+    if (!settings.spreadsheetId || !settings.apiKey) return;
+
+    try {
+      const sheets = await GoogleSheetsService.getAvailableSheets(
+        settings.spreadsheetId,
+        settings.apiKey
+      );
+      setAvailableSheets(sheets);
+    } catch (error) {
+      console.error('Error fetching available sheets:', error);
+      setAvailableSheets([]);
+    }
+  }, [settings.spreadsheetId, settings.apiKey]);
   // Fetch feedback data from Google Sheets
   const fetchFeedbackData = useCallback(async (showToast: boolean = true) => {
-    if (!settings.spreadsheetId || !settings.apiKey) {
+    if (!settings.spreadsheetId || !settings.apiKey || !settings.sheetRange) {
       // Use mock data when no configuration is provided
       setFeedbackData(mockFeedbackData);
       if (showToast) {
         toast({
           title: "Using Demo Data",
-          description: "Configure Google Sheets integration to fetch real feedback data.",
+          description: "Configure Google Sheets integration (Spreadsheet ID, API key, and range) to fetch real feedback data.",
         });
       }
       return;
@@ -143,7 +163,9 @@ export const useFeedback = () => {
     try {
       const data = await GoogleSheetsService.fetchFeedbackResponses(
         settings.spreadsheetId,
-        settings.apiKey
+        settings.apiKey,
+        settings.sheetRange,
+        settings.formName
       );
       
       setFeedbackData(data);
@@ -171,14 +193,14 @@ export const useFeedback = () => {
     } finally {
       setLoading(false);
     }
-  }, [settings.spreadsheetId, settings.apiKey, toast]);
+  }, [settings.spreadsheetId, settings.apiKey, settings.sheetRange, settings.formName, toast]);
 
   // Test Google Sheets connection
   const testConnection = useCallback(async () => {
-    if (!settings.spreadsheetId || !settings.apiKey) {
+    if (!settings.spreadsheetId || !settings.apiKey || !settings.sheetRange) {
       toast({
         title: "Missing Configuration",
-        description: "Please provide both Spreadsheet ID and API key.",
+        description: "Please provide Spreadsheet ID, API key, and sheet range.",
         variant: "destructive"
       });
       return false;
@@ -189,7 +211,8 @@ export const useFeedback = () => {
     try {
       const isConnected = await GoogleSheetsService.testConnection(
         settings.spreadsheetId,
-        settings.apiKey
+        settings.apiKey,
+        settings.sheetRange
       );
       
       if (isConnected) {
@@ -197,11 +220,14 @@ export const useFeedback = () => {
           title: "Connection Successful",
           description: "Successfully connected to Google Sheets."
         });
+        
+        // Fetch available sheets after successful connection
+        await fetchAvailableSheets();
         return true;
       } else {
         toast({
           title: "Connection Failed",
-          description: "Failed to connect to Google Sheets. Please check your credentials.",
+          description: "Failed to connect to Google Sheets. Please check your credentials and range.",
           variant: "destructive"
         });
         return false;
@@ -209,15 +235,39 @@ export const useFeedback = () => {
     } catch (error) {
       toast({
         title: "Connection Error",
-        description: "An error occurred while testing the connection.",
+        description: error instanceof Error ? error.message : "An error occurred while testing the connection.",
         variant: "destructive"
       });
       return false;
     } finally {
       setLoading(false);
     }
-  }, [settings.spreadsheetId, settings.apiKey, toast]);
+  }, [settings.spreadsheetId, settings.apiKey, settings.sheetRange, toast, fetchAvailableSheets]);
 
+  // Create new Google Form
+  const createNewForm = useCallback(async (title: string, description: string) => {
+    try {
+      // Since Google Forms API requires OAuth, we'll provide a template URL
+      const templateUrl = GoogleSheetsService.generateFormTemplate(title, description);
+      
+      // Open the template URL in a new tab
+      window.open(templateUrl, '_blank');
+      
+      toast({
+        title: "Form Template Opened",
+        description: "A new tab has opened with a Google Form template. Please customize and save it, then link it to a spreadsheet.",
+      });
+      
+      return true;
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create form template.",
+        variant: "destructive"
+      });
+      return false;
+    }
+  }, [toast]);
   // Update feedback status (local only - for UI purposes)
   const updateFeedbackStatus = useCallback((feedbackId: string, newStatus: 'new' | 'reviewed' | 'resolved') => {
     setFeedbackData(prev => 
@@ -299,10 +349,13 @@ export const useFeedback = () => {
     loading,
     error,
     settings,
+    availableSheets,
     loadSettings,
     saveSettings,
     fetchFeedbackData,
+    fetchAvailableSheets,
     testConnection,
+    createNewForm,
     updateFeedbackStatus,
     getStatistics,
     filterFeedback,
