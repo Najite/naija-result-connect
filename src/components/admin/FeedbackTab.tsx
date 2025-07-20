@@ -489,7 +489,7 @@ const FeedbackTab: React.FC = () => {
                         </span>
                       </div>
                     </div>
-                  ))}
+                  ))} 
                 </div>
               </CardContent>
             </Card>
