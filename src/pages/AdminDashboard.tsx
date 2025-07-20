@@ -35,7 +35,7 @@ import DepartmentChart from '@/components/admin/DepartmentChart';
 import StudentList from '@/components/admin/StudentList';
 import ResultsList from '@/components/admin/ResultsList';
 import CoursesList from '@/components/admin/CourseList';
-import NotificationCenter from '@/components/admin/NotificationCenter';
+import EnhancedNotificationCenter from '@/components/admin/EnhancedNotificationCenter';
 import FeedbackTab from '@/components/admin/FeedbackTab';
 import { NotificationService } from '@/services/notificationService';
 import { useAdminData } from '@/hooks/useAdminData';
@@ -626,7 +626,7 @@ const AdminDashboard: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="notifications" className="space-y-6">
-            <NotificationCenter
+            <EnhancedNotificationCenter
               students={students}
               onPublishResults={handlePublishResults}
               onSendTestNotification={() => sendTestNotification(5)}

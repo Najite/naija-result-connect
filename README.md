@@ -59,6 +59,27 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Supabase (Database & Authentication)
+- SendChamp (SMS Service)
+- EmailJS (Email Service)
+
+## SMS Configuration
+
+To enable SMS notifications, you need to configure SendChamp:
+
+1. Sign up at [SendChamp](https://sendchamp.com)
+2. Get your API key from the dashboard
+3. Add `VITE_SENDCHAMP_API_KEY` to your environment variables
+4. The system will automatically format Nigerian phone numbers
+
+### SMS Features
+
+- Send individual SMS to students
+- Bulk SMS with progress tracking
+- SMS delivery status tracking
+- Automatic retry for failed SMS
+- SMS records and statistics
+- Test SMS functionality
 
 ## How can I deploy this project?
 
