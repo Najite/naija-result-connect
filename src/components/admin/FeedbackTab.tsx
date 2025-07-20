@@ -58,63 +58,10 @@ const FeedbackTab: React.FC = () => {
   } = useFeedback();
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterCategory] = useState('all');
   const [filterRating, setFilterRating] = useState('all');
   const { toast } = useToast();
 
-  // Mock data for demonstration - replace with actual Google Sheets API integration
-  const mockFeedbackData: FeedbackResponse[] = [
-    {
-      id: '1',
-      timestamp: '2024-01-15T10:30:00Z',
-      name: 'John Doe',
-      email: 'john.doe@student.edu',
-      rating: 5,
-      category: 'User Interface',
-      message: 'The new dashboard is amazing! Very intuitive and easy to navigate.',
-      status: 'new'
-    },
-    {
-      id: '2',
-      timestamp: '2024-01-14T14:20:00Z',
-      name: 'Jane Smith',
-      email: 'jane.smith@student.edu',
-      rating: 4,
-      category: 'Notifications',
-      message: 'SMS notifications work great, but email notifications could be faster.',
-      status: 'reviewed'
-    },
-    {
-      id: '3',
-      timestamp: '2024-01-13T09:15:00Z',
-      name: 'David Johnson',
-      email: 'david.j@student.edu',
-      rating: 3,
-      category: 'Performance',
-      message: 'The system is good but sometimes loads slowly during peak hours.',
-      status: 'resolved'
-    },
-    {
-      id: '4',
-      timestamp: '2024-01-12T16:45:00Z',
-      name: 'Sarah Wilson',
-      email: 'sarah.w@student.edu',
-      rating: 5,
-      category: 'Features',
-      message: 'Love the new result tracking feature! Very helpful for monitoring progress.',
-      status: 'new'
-    },
-    {
-      id: '5',
-      timestamp: '2024-01-11T11:30:00Z',
-      name: 'Michael Brown',
-      email: 'michael.b@student.edu',
-      rating: 2,
-      category: 'Bug Report',
-      message: 'Found a bug where the CGPA calculation seems incorrect for some courses.',
-      status: 'reviewed'
-    }
-  ];
 
   // Filter feedback data
   const filteredFeedback = filterFeedback(searchTerm, filterCategory, filterRating);
@@ -376,16 +323,7 @@ const FeedbackTab: React.FC = () => {
                   />
                 </div>
                 
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All Categories</option>
-                  {categories.map(category => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
+             
 
                 <select
                   value={filterRating}
@@ -403,7 +341,6 @@ const FeedbackTab: React.FC = () => {
                 <Button
                   onClick={() => {
                     setSearchTerm('');
-                    setFilterCategory('all');
                     setFilterRating('all');
                   }}
                   variant="outline"
@@ -501,7 +438,7 @@ const FeedbackTab: React.FC = () => {
             {/* Category Breakdown */}
             <Card>
               <CardHeader>
-                <CardTitle>Feedback by Category</CardTitle>
+                <CardTitle>Feedback by Matric number</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
