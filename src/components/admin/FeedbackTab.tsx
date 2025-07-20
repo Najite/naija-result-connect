@@ -308,32 +308,45 @@ const FeedbackTab: React.FC = () => {
           {/* Recent Feedback */}
           <Card>
             <CardHeader>
-              <CardTitle>Recent Feedback</CardTitle>
-              <CardDescription>Latest feedback from students</CardDescription>
+              <CardTitle>Latest Student Feedback</CardTitle>
+              <CardDescription>Recent feedback messages and suggestions from students</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {feedbackData.slice(0, 5).map((feedback) => (
-                  <div key={feedback.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1">
-                          {renderStars(feedback.rating)}
-                        </div>
-                        <Badge className={getStatusColor(feedback.status)}>
+                  <div key={feedback.id} className="border rounded-lg p-6 hover:bg-gray-50 transition-colors">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-gray-500" />
+                        <span className="font-medium text-gray-900">{feedback.name}</span>
+                        <Badge variant="outline" className="text-xs">{feedback.category}</Badge>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={getStatusColor(feedback.status)} variant="secondary">
                           {feedback.status}
                         </Badge>
-                        <Badge variant="outline">{feedback.category}</Badge>
+                        <span className="text-sm text-gray-500">
+                          {formatDate(feedback.timestamp)}
+                        </span>
                       </div>
-                      <span className="text-sm text-gray-500">
-                        {formatDate(feedback.timestamp)}
-                      </span>
                     </div>
-                    <div className="mb-2">
-                      <span className="font-medium">{feedback.name}</span>
-                      <span className="text-gray-500 ml-2">({feedback.email})</span>
+                    
+                    {/* Main feedback message */}
+                    <div className="bg-gray-50 rounded-lg p-4 mb-3">
+                      <p className="text-gray-800 leading-relaxed">{feedback.message}</p>
                     </div>
-                    <p className="text-gray-700">{feedback.message}</p>
+                    
+                    {/* Footer with contact and rating */}
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">{feedback.email}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500">Rating:</span>
+                        <div className="flex items-center gap-1">
+                          {renderStars(feedback.rating)}
+                          <span className="text-gray-600 ml-1">({feedback.rating}/5)</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -404,36 +417,45 @@ const FeedbackTab: React.FC = () => {
           {/* Feedback List */}
           <div className="grid gap-4">
             {filteredFeedback.map((feedback) => (
-              <Card key={feedback.id} className="hover:shadow-md transition-shadow">
+              <Card key={feedback.id} className="hover:shadow-lg transition-all duration-200">
                 <CardContent className="p-6">
+                  {/* Header with student info and metadata */}
                   <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-gray-500" />
-                        <span className="font-medium">{feedback.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {renderStars(feedback.rating)}
-                        <span className="ml-2 text-sm text-gray-600">
-                          ({feedback.rating}/5)
-                        </span>
+                    <div className="flex items-center gap-3">
+                      <User className="w-5 h-5 text-gray-500" />
+                      <div>
+                        <span className="font-semibold text-gray-900">{feedback.name}</span>
+                        <p className="text-sm text-gray-600">{feedback.email}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge className={getStatusColor(feedback.status)}>
+                      <Badge className={getStatusColor(feedback.status)} variant="secondary">
                         {feedback.status}
                       </Badge>
-                      <Badge variant="outline">{feedback.category}</Badge>
+                      <Badge variant="outline" className="text-xs">{feedback.category}</Badge>
                     </div>
                   </div>
                   
-                  <p className="text-gray-700 mb-4">{feedback.message}</p>
+                  {/* Main feedback content */}
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Feedback Message:</h4>
+                    <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                      <p className="text-gray-800 leading-relaxed text-base">{feedback.message}</p>
+                    </div>
+                  </div>
                   
-                  <div className="flex justify-between items-center text-sm text-gray-500">
-                    <span>{feedback.email}</span>
+                  {/* Footer with timestamp and rating */}
+                  <div className="flex justify-between items-center pt-3 border-t border-gray-100">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-4 h-4" />
-                      {formatDate(feedback.timestamp)}
+                      <span className="text-sm text-gray-500">{formatDate(feedback.timestamp)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">Rating:</span>
+                      <div className="flex items-center gap-1">
+                        {renderStars(feedback.rating)}
+                        <span className="text-sm text-gray-600 ml-1">({feedback.rating}/5)</span>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -443,15 +465,15 @@ const FeedbackTab: React.FC = () => {
 
           {filteredFeedback.length === 0 && (
             <Card>
-              <CardContent className="p-12 text-center">
+              <CardContent className="p-16 text-center">
                 <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No feedback found</h3>
+                <h3 className="text-xl font-medium text-gray-900 mb-2">No feedback messages found</h3>
                 <p className="text-gray-600">
                   {!isConfigured 
                     ? 'Please configure Google Forms integration in the Settings tab to see real feedback data.'
                     : searchTerm || filterCategory !== 'all' || filterRating !== 'all'
-                    ? 'Try adjusting your filters to see more feedback.'
-                    : 'No feedback responses have been submitted yet.'
+                    ? 'Try adjusting your search terms or filters to see more feedback messages.'
+                    : 'No feedback messages have been submitted yet. Students can submit feedback through the configured Google Form.'
                   }
                 </p>
                 {!isConfigured && (
@@ -465,7 +487,7 @@ const FeedbackTab: React.FC = () => {
                     }}
                     className="mt-4"
                   >
-                    Configure Now
+                    Configure Google Forms Integration
                   </Button>
                 )}
               </CardContent>
