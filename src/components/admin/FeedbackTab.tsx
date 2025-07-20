@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   MessageSquare, 
   Star, 
@@ -15,7 +16,8 @@ import {
   TrendingUp,
   BarChart3,
   Filter,
-  Search
+  Search,
+  AlertCircle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFeedback } from '@/hooks/useFeedback';
